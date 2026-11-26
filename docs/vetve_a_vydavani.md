@@ -49,3 +49,15 @@ Testovací vydání mají příponu: `1.3.0-test.1`, `1.3.0-test.2`, …
 - APK musí být vždy podepsané **stejným klíčem**, jinak Android aktualizaci odmítne (aplikaci by bylo nutné odinstalovat i s daty).
 - Klíč (`.jks`) a jeho hesla **nikdy nepatří do repozitáře** (`.gitignore` je vylučuje). Uchovat zálohu na bezpečném místě mimo počítač.
 - Pokud se vydávání bude dělat automaticky přes GitHub Actions, klíč se uloží do GitHub Secrets.
+
+## Vyzkoušení aktualizace z GitHubu
+
+Předpoklad: podpisový klíč je v GitHub Secrets (`SIGNING_KEYSTORE_B64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`). Bez něj má každé sestavení jiný ladicí klíč a Android aktualizaci odmítne („aplikace není kompatibilní“ / konflikt balíčku).
+
+1. Odinstalovat z tabletu dosavadní demo (je podepsané jiným, ladicím klíčem). Jednorázově.
+2. Na větvi `test` vytvořit tag `v0.1.0-test.1` → GitHub Actions sestaví testovací variantu a vytvoří pre-release s APK.
+3. Na tabletu otevřít stránku Releases, stáhnout APK a nainstalovat (povolit „Instalovat neznámé aplikace“ pro prohlížeč).
+4. Vytvořit další tag `v0.1.0-test.2` (stačí i bez změny kódu).
+5. V aplikaci Nastavení → Aktualizace → „Zkontrolovat“ → nabídne `0.1.0-test.2` → Stáhnout a nainstalovat. Android napoprvé požádá o povolení „Instalovat neznámé aplikace“ pro Pražička TEST, pak instalaci potvrdit. Data aplikace (receptury, záznamy, nastavení) zůstanou.
+
+Pozor: APK z běžného sestavení (artefakt z Actions, ne z vydání) má verzi `0.1.0-test.<číslo běhu>`. Kontrola aktualizací porovnává tato čísla s tagy, takže pro zkoušení aktualizací instalovat jen APK z vydání (Releases).

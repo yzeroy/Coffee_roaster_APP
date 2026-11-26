@@ -28,9 +28,17 @@ Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nej
 
 - Android tablet, orientace na šířku. Návrh i pro menší tablety (cca 8″), ovládací prvky dost velké na dotyk v pracovním prostředí.
 - Obrazovka během pražení nezhasíná.
-- Tmavý i světlý motiv; výchozí tmavý (lépe čitelný graf).
+- Motiv **Tmavý / Světlý / Podle systému** (Nastavení), výchozí tmavý (lépe čitelný graf). Světlý motiv je na jasné místo u pražičky; barvy křivek se volí tak, aby byly čitelné v obou.
+- **Rozvržení se přizpůsobí obrazovce samo** (konkrétní tablet zatím není znám):
+  - žádné pevné šířky panelů – graf zabere zbytek místa, panel hodnot a karty ovládání mají jen minimální a maximální šířku,
+  - podle dostupné šířky (v dp) aplikace volí rozvržení: **široké** (≥ 1200 dp: graf + panel hodnot vpravo + spodní řada karet), **střední** (840–1199 dp: užší panel hodnot, karty měničů a plamene vedle sebe se zalamováním), **kompaktní** (< 840 dp: panel hodnot jako pruh nad grafem, ovládání ve spodní části s posouváním),
+  - nic nesmí přesahovat okraj obrazovky; když se obsah nevejde, část se posouvá, nikdy se neořízne,
+  - tlačítka zůstávají aspoň 48 dp vysoká (dotyk v rukavici),
+  - **Velikost rozhraní** v Nastavení: 90 / 100 / 110 / 120 % – zvětší nebo zmenší všechna písma a prvky najednou, pro jemné doladění na konkrétním tabletu.
 
 ## 4. Obrazovky
+
+Levá lišta: **Pražení, Receptury, Záznamy, Nastavení** (v testovací variantě navíc **Test**) a dole červené **STOP ohřevu**. Kalibrace PID a Diagnostika jsou v Nastavení.
 
 ### 4.1 Pražení (hlavní obrazovka)
 
@@ -38,13 +46,14 @@ Rozdělená na tři části:
 
 **Graf (většina plochy)**
 - Osa X: čas od vsypání (před vsypáním záporný čas nebo čas od začátku záznamu).
-- Křivky: teplota zrna `bt`, vzduch `air`, odtah `exh`, RoR zrna `bt_ror` (vlastní osa vpravo), cílová teplota `sp`, plyn `out`/`gas` (vlastní osa 0–100 %).
+- Křivky: teplota zrna `bt`, vzduch – okolí `air` (TP1, teplota **vně** pražičky, mění se pomalu), odtah – komín `exh` (TP2), RoR zrna `bt_ror` (vlastní osa vpravo), cílová teplota `sp`, plyn `out`/`gas` (vlastní osa 0–100 %).
 - Křivka receptury (`curve`) na pozadí, když je nahraná.
 - Svislé značky událostí (`charge`, `dry_end`, `fc_start`, `fc_end`, `sc_start`, `drop`) a chyb.
 - Viditelnost jednotlivých křivek lze zapínat a vypínat; přiblížení a posun gestem, tlačítko „zpět na živý průběh“.
+- **Reset grafu** (jen ruční pražení, tj. bez receptury): smaže dosavadní průběh v grafu a začne čas znovu od 0 (např. po předehřátí před vsypáním). S potvrzením. Když běží záznam, dosavadní část se ze záznamu odstraní a záznam pokračuje od resetu. Na řízení pražičky nemá žádný vliv (Portentě se nic neposílá). U receptury se nenabízí – tam čas určuje vsypání v Portentě.
 
 **Panel hodnot (pruh nahoře nebo vpravo)**
-- Velké číslo: teplota zrna a RoR. Menší: vzduch, odtah, plyn, cíl.
+- Velké číslo: teplota zrna a RoR. Menší: vzduch (okolí), odtah (komín), plyn, cíl.
 - Stav automatu česky (např. „Připraveno“, „Zapalování“, „Pražení“, „Chyba“), fáze receptury, čas od vsypání.
 - Indikátory vpravo nahoře: spojení, **STOP OK**, **PSU OK**, **PLAMEN OK / NOK / VYP** (`burner.flame`: 1 = OK, 2 = zapálení selhalo = NOK, 0 = hořák nehoří = VYP), simulace (když firmware hlásí `sim_vfd`/`sim_temp`).
 
@@ -87,9 +96,18 @@ Rozdělená na tři části:
 
 ### 4.3 Kalibrace PID
 
+Není v levé liště, otevírá se z **Nastavení → Kalibrace PID** (používá se zřídka). Tlačítko STOP ohřevu v liště zůstává viditelné i tady.
+
 - Zobrazení aktuálních konstant (`pid_get`) a příznaku „uloženo trvale“.
-- Ruční ladění: pole `kp`, `ki`, `kd`, tlačítka „Vyzkoušet“ (`save:false`) a „Uložit trvale“ (`save:true`, s potvrzením; Portenta přijme uložení nejvýš 1× za 10 s, tlačítko je mezitím neaktivní). Živý graf `bt`, `sp`, `out`.
-- Automatické ladění: zadání `sp`, `gas_low`, `gas_high`, `cycles`; průběh (fáze, cyklus x z y, uplynulý čas); tlačítko „Přerušit“.
+- **Panel hodnot čísly** (nejen v grafu): teplota zrna (velké číslo), cíl, plyn, RoR, stav hořáku/plamene; během ladění fáze, cyklus x z y, uplynulý čas a **zbývající čas fáze** (`phase_left_s`).
+- Živý graf `bt`, `sp`, `out` s **pevnou časovou osou** od začátku ladění (nebo od otevření obrazovky); osa se rozšiřuje, neposouvá se s každým vzorkem.
+- Ruční ladění: pole `kp`, `ki`, `kd`, tlačítka „Vyzkoušet“ (`save:false`) a „Uložit trvale“ (`save:true`, s potvrzením; Portenta přijme uložení nejvýš 1× za 10 s, tlačítko je mezitím neaktivní).
+- Automatické ladění (API 1.6, bod 8.5):
+  - **Prohřátí bubnu** před laděním: teplota a doba (`soak_sp`, `soak_s`); drží je PID se **současnými** konstantami. Doba se počítá od prvního dosažení teploty prohřátí. Doba 0 = bez prohřátí.
+  - Ladění: cíl `sp`, `gas_low`, `gas_high`, `cycles`.
+  - **Spustit jde z klidu (`READY`)** – Portenta sama zapálí – i za běžícího ohřevu (`RUNNING`). Ne během receptury.
+  - Průběh: zapálení → prohřátí (odpočet) → najetí na cíl → kmity → hotovo; tlačítko „Přerušit“ (`autotune_abort`), STOP ohřevu funguje vždy.
+  - Chybové hlášení Portenty (`autotune_result ok:false`) aplikace ukáže i s radou (např. „max. plyn nestačí na cíl – zvyš gas_high“).
 - Výsledek ladění: navržené konstanty vedle současných, možnost upravit a teprve pak použít. Nic se nepoužije automaticky.
 - Upozornění před laděním na skutečné pražičce: dokud firmware nemá limity přehřátí (etapa 3), aplikace zobrazí varování.
 
@@ -102,6 +120,8 @@ Rozdělená na tři části:
 
 ### 4.5 Diagnostika
 
+Není v levé liště, otevírá se z **Nastavení → Diagnostika**.
+
 - Výstup `get_diag`: verze firmwaru, sestavení, doba běhu, důvod posledního startu (`reset_reason` – výrazně upozornit na `watchdog` a `brown_out`), IP, MAC, simulace, počty přihlášení, panik a odmítnutých přihlášení, poslední chyby měničů, PID, konfigurace.
 - Log událostí (`event`) s filtrem podle úrovně a kódu, kopírování a export.
 - Stav spojení: zpoždění odpovědí, počet výpadků od spuštění.
@@ -111,7 +131,9 @@ Rozdělená na tři části:
 
 - Adresa Portenty a port (výchozí 5020) – tlačítko „Najít Portentu“ (UDP dotaz podle API bod 2.3), jinak ruční zadání IP. Nalezená adresa se uloží.
 - Token (8–32 znaků ASCII bez mezer, aplikace kontroluje už při zadání), test spojení.
-- Zvuky výzev, motiv, jednotky času v grafu, výchozí viditelnost křivek.
+- **Vzhled:** motiv Tmavý / Světlý / Podle systému, Velikost rozhraní 90–120 % (bod 3).
+- Zvuky výzev, jednotky času v grafu, výchozí viditelnost křivek.
+- **Kalibrace PID** (bod 4.3) a **Diagnostika** (bod 4.5) – otevírají se odsud.
 - „Ukládat ruční pražení“ – výchozí odpověď v dialogu před ručním pražením.
 - Aktualizace aplikace (bod 7).
 - O aplikaci: verze aplikace, varianta (provozní / testovací), verze protokolu.
@@ -142,6 +164,7 @@ Podle API (body 4 a 5):
 - Aplikace při spuštění (a z nastavení ručně) zkontroluje nejnovější vydání svého kanálu, nabídne stažení a instalaci.
 - Android instalaci aplikace z jiného zdroje než obchodu vždy nechá potvrdit uživatelem (jednorázové povolení „instalovat neznámé aplikace“ + potvrzení každé instalace). Úplně tichá instalace se neplánuje.
 - **Za ohřevu se aktualizace nenabízí ani neinstaluje.**
+- Postup, jak aktualizaci vyzkoušet, je v `docs/vetve_a_vydavani.md` (Vyzkoušení aktualizace z GitHubu).
 
 ## 8. Testovací varianta
 
