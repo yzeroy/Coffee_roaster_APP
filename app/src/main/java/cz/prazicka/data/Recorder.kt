@@ -28,8 +28,13 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
     private var lastMs: Long = -1
     private var liveStartMs: Long = -1
     private var lastCheckpoint = 0L
-    var enabled = true
+    private var lastStatus: Status? = null
+    /** Výchozí volba z Nastavení pro ruční pražení spuštěné jinak než z dialogu. */
+    var defaultManual = true
+    /** Volba z dialogu před ručním pražením: zaznamenat / nezaznamenat (platí pro nejbližší ohřev). */
+    var nextManualChoice: Boolean? = null
     var fw: String = ""
+    private var wasHeating = false
 
     private fun sampleOf(s: Status, t: Double) = Sample(
         t = t,
@@ -47,10 +52,17 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
         val l = _live.value
         _live.value = (if (l.size > 2600) l.drop(200) else l) + sampleOf(s, liveT)
 
+        lastStatus = s
         val rec = _current.value
         val recipeActive = s.roast?.running == true
+        val heatingStarted = s.state.heating && !wasHeating
+        wasHeating = s.state.heating
         if (rec == null) {
-            if (s.state.heating && (enabled || recipeActive)) start(s)
+            if (heatingStarted) {
+                val record = recipeActive || (nextManualChoice ?: defaultManual)
+                nextManualChoice = null
+                if (record) start(s)
+            }
         } else {
             if (s.ms < lastMs) {
                 // Portenta se restartovala – záznam končí
@@ -91,6 +103,15 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
             appVersion = appVersion,
             fw = fw,
         )
+    }
+
+    /** „Začít zaznamenávat“ během ručního pražení bez záznamu – od tohoto okamžiku. */
+    fun startNow(): Boolean {
+        if (_current.value != null) return false
+        val s = lastStatus ?: return false
+        if (!s.state.heating) return false
+        start(s)
+        return true
     }
 
     fun finish() {

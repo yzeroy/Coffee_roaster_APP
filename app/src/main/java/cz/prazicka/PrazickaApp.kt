@@ -37,7 +37,7 @@ class AppContainer(app: Application) {
         scope.launch {
             client.link.collect { l -> if (l is LinkState.Connected) recorder.fw = l.hello.fw ?: "" }
         }
-        scope.launch { settings.settings.collect { recorder.enabled = it.recordManual } }
+        scope.launch { settings.settings.collect { recorder.defaultManual = it.recordManual } }
         connect()
     }
 

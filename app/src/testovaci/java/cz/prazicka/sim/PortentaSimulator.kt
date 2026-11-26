@@ -170,6 +170,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private var ignStartBt = 0.0
     private var ignStartExh = 0.0
     private var reigniting = false
+    private var startSp: Double? = null
 
     // ---- události a odesílání
     private var seq = 0L
@@ -620,6 +621,18 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         } else {
             mode = "manual"
             gas = IGNITION_GAS
+            val target = startSp
+            startSp = null
+            if (target != null) {
+                if (reading(0) == null) {
+                    event("warn", "mode", "neplatna teplota zrna – rucni rezim") { put("mode", "manual"); put("reason", "sensor") }
+                } else {
+                    sp = target
+                    mode = "pid"
+                    bumpless(sp)
+                    event("info", "mode", "rezim: pid na ${sp}") { put("mode", "pid"); put("reason", "user") }
+                }
+            }
         }
     }
 
@@ -873,7 +886,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             "get_diag" -> null to diag(id)
             "event_log" -> cmdEventLog(o)
             "vfd_set" -> cmdVfdSet(o) to null
-            "heat_start" -> { cmdHeatStart(); null to null }
+            "heat_start" -> { cmdHeatStart(o); null to null }
             "heat_stop" -> { cmdHeatStop(); null to null }
             "gas_set" -> { cmdGasSet(o); null to null }
             "reignite" -> { cmdReignite(); null to null }
@@ -960,11 +973,13 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         setState("IGNITION_INTERLOCK")
     }
 
-    private fun cmdHeatStart() {
+    private fun cmdHeatStart(o: JsonObject) {
         requireState(state == "READY", "heat_start jen ve stavu READY")
         requireState(!heatBlocked, "ohrev je po restartu zablokovany – nejdriv heat_stop")
         requireState(!recipeRunning(), "bezi receptura")
+        val target = num(o, "sp", 50.0, 260.0, required = false)
         mode = "manual"
+        startSp = target?.let { r1(it) }
         startHeat()
     }
 
@@ -974,6 +989,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         burnerOff()
         flame = 0
         mode = "manual"
+        startSp = null
         heatBlocked = false
         endRecipe("abort")
         if (wasHeating) setState("READY")

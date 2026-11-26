@@ -4,7 +4,7 @@ name: Sestavení
 # Tag vX.Y.Z na main → stabilní vydání, tag vX.Y.Z-test.N na test → testovací vydání.
 on:
   push:
-    branches: [ test, main ]
+    branches: [ test, main, 'rozpracovano-*' ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main ]

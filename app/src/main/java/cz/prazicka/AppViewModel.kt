@@ -106,6 +106,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setVfd(i: Int, pct: Int) = cmd("vfd_set") { put("vfd", i); put("pct", pct) }
     fun heatStart() = cmd("heat_start")
+
+    /** Ruční pražení z dialogu: cílová teplota (PID ji drží od zapálení, API 1.4) a volba záznamu. */
+    fun manualStart(sp: Double, record: Boolean) {
+        val target = r1(sp.coerceIn(50.0, 260.0))
+        c.settings.update { it.copy(lastManualSp = target) }
+        c.recorder.nextManualChoice = record
+        val hasPid = client.hello?.has("pid") == true
+        if (!hasPid) toast("Firmware zatím neumí PID – pražení začne s ručním plynem")
+        viewModelScope.launch {
+            val r = client.command("heat_start") { if (hasPid) put("sp", target) }
+            if (!r.ok) {
+                c.recorder.nextManualChoice = null
+                toast(Texts.err(r.err, r.msg))
+            }
+        }
+    }
+
+    /** Návrat z ručního plynu k řízení teplotou. */
+    fun followTemperature() = cmd("mode_set") { put("mode", "pid") }
+
+    fun startRecordingNow() {
+        toast(if (c.recorder.startNow()) "Záznam spuštěn" else "Záznam nejde spustit (neběží ohřev nebo už se zaznamenává)")
+    }
     fun heatStop() = cmd("heat_stop", "Hořák vypnut")
     fun reignite() = cmd("reignite")
     fun restart() = cmd("restart")

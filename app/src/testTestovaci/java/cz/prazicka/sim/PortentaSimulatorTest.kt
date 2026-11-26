@@ -102,6 +102,18 @@ class PortentaSimulatorTest {
     }
 
     @Test
+    fun ohrevSCilovouTeplotouPrejdeDoPid() {
+        val h = booted()
+        assertTrue(h.send("heat_start") { put("sp", 205.0) }.bool("ok") == true)
+        assertTrue(h.runUntil(40.0) { it.state == RoasterState.RUNNING })
+        h.run(1.0)
+        val s = h.status()
+        assertEquals("pid", s.ctrl.mode)
+        assertEquals(205.0, s.ctrl.sp ?: 0.0, 0.01)
+        assertEquals("out_of_range", h.send("heat_stop").let { h.send("heat_start") { put("sp", 300) } }.str("err"))
+    }
+
+    @Test
     fun ackPredUdalosti() {
         val h = booted()
         val before = h.received.size

@@ -26,6 +26,7 @@ data class AppSettings(
     val lastUpdateCheck: Long = 0L,
     val hiddenCurves: Set<String> = emptySet(),
     val lastFoundAt: Long = 0L,
+    val lastManualSp: Double = 200.0,
 )
 
 /** Nastavení aplikace. Token se ukládá zvlášť, šifrovaný klíčem v Android Keystore. */
@@ -47,6 +48,7 @@ class SettingsStore(context: Context) {
         lastUpdateCheck = prefs.getLong("last_update_check", 0L),
         hiddenCurves = prefs.getStringSet("hidden_curves", emptySet()) ?: emptySet(),
         lastFoundAt = prefs.getLong("last_found_at", 0L),
+        lastManualSp = prefs.getFloat("last_manual_sp", 200f).toDouble(),
     )
 
     fun update(f: (AppSettings) -> AppSettings) {
@@ -62,6 +64,7 @@ class SettingsStore(context: Context) {
             .putLong("last_update_check", s.lastUpdateCheck)
             .putStringSet("hidden_curves", s.hiddenCurves)
             .putLong("last_found_at", s.lastFoundAt)
+            .putFloat("last_manual_sp", s.lastManualSp.toFloat())
             .apply()
         _settings.value = s
     }
