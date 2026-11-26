@@ -35,8 +35,8 @@ jobs:
             echo "flavor=Provozni" >> "$GITHUB_OUTPUT"
             echo "dir=provozni" >> "$GITHUB_OUTPUT"
           else
-            echo "flavor=Testovaci" >> "$GITHUB_OUTPUT"
-            echo "dir=testovaci" >> "$GITHUB_OUTPUT"
+            echo "flavor=Zkusebni" >> "$GITHUB_OUTPUT"
+            echo "dir=zkusebni" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Podpisový klíč (jen když je nastavený v Secrets)

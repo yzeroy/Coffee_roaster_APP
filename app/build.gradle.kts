@@ -35,7 +35,8 @@ android {
             buildConfigField("boolean", "IS_TEST", "false")
             resValue("string", "app_name", "Pražička")
         }
-        create("testovaci") {
+        // Gradle nepovolí název začínající na „test“, proto „zkusebni“ (= testovací varianta).
+        create("zkusebni") {
             dimension = "varianta"
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test.$ciVersionCode"

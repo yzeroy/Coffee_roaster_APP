@@ -18,6 +18,8 @@
 
 ## Varianty aplikace
 
+V Gradlu se varianty jmenují `provozni` a `zkusebni` (název varianty nesmí začínat na „test“). Úlohy: `assembleProvozniRelease`, `assembleZkusebniRelease`.
+
 | | Provozní | Testovací |
 |---|---|---|
 | Sestavuje se z | `main` | `test` |
