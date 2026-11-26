@@ -61,7 +61,7 @@ Rozdělená na tři části:
 - Výzvu lze zavřít; tlačítko akce zůstává zvýrazněné.
 
 **Chybový stav (HALTED)**
-- Celoobrazovkový pruh s kódem a příčinou česky (tabulka kódů z API, neznámý kód = „neznámá chyba (kód N)“), měnič, kterého se chyba týká.
+- Celoobrazovkový pruh s kódem a příčinou česky (tabulka kódů z API, neznámý kód = „neznámá chyba (kód N)“), měnič, kterého se chyba týká, čas vzniku chyby a popis z Portenty (`fault.msg`).
 - Tlačítko `Restart` (jen když STOP i PSU jsou v pořádku, jinak vysvětlení, co je potřeba).
 - Po restartu aplikace upozorní, že ohřev je blokovaný, dokud ho obsluha nezruší (`heat_blocked`).
 
@@ -80,7 +80,7 @@ Rozdělená na tři části:
 ### 4.3 Kalibrace PID
 
 - Zobrazení aktuálních konstant (`pid_get`) a příznaku „uloženo trvale“.
-- Ruční ladění: pole `kp`, `ki`, `kd`, tlačítka „Vyzkoušet“ (`save:false`) a „Uložit trvale“ (`save:true`, s potvrzením). Živý graf `bt`, `sp`, `out`.
+- Ruční ladění: pole `kp`, `ki`, `kd`, tlačítka „Vyzkoušet“ (`save:false`) a „Uložit trvale“ (`save:true`, s potvrzením; Portenta přijme uložení nejvýš 1× za 10 s, tlačítko je mezitím neaktivní). Živý graf `bt`, `sp`, `out`.
 - Automatické ladění: zadání `sp`, `gas_low`, `gas_high`, `cycles`; průběh (fáze, cyklus x z y, uplynulý čas); tlačítko „Přerušit“.
 - Výsledek ladění: navržené konstanty vedle současných, možnost upravit a teprve pak použít. Nic se nepoužije automaticky.
 - Upozornění před laděním na skutečné pražičce: dokud firmware nemá limity přehřátí (etapa 3), aplikace zobrazí varování.
@@ -94,14 +94,15 @@ Rozdělená na tři části:
 
 ### 4.5 Diagnostika
 
-- Výstup `get_diag`: verze firmwaru, sestavení, doba běhu, IP, MAC, simulace, poslední chyby měničů, PID, konfigurace měničů.
+- Výstup `get_diag`: verze firmwaru, sestavení, doba běhu, důvod posledního startu (`reset_reason` – výrazně upozornit na `watchdog` a `brown_out`), IP, MAC, simulace, počty přihlášení, panik a odmítnutých přihlášení, poslední chyby měničů, PID, konfigurace.
 - Log událostí (`event`) s filtrem podle úrovně a kódu, kopírování a export.
 - Stav spojení: zpoždění odpovědí, počet výpadků od spuštění.
 - Náhrada sériové konzole: všechny funkce, které dnes nabízí konzole (`s`, `ip`, `r`, simulace), jsou dostupné tady nebo na hlavní obrazovce.
 
 ### 4.6 Nastavení
 
-- Adresa Portenty (IP nebo název) a port (výchozí 5020), token, test spojení.
+- Adresa Portenty a port (výchozí 5020) – tlačítko „Najít Portentu“ (UDP dotaz podle API bod 2.3), jinak ruční zadání IP. Nalezená adresa se uloží.
+- Token (8–32 znaků ASCII bez mezer, aplikace kontroluje už při zadání), test spojení.
 - Zvuky výzev, motiv, jednotky času v grafu, výchozí viditelnost křivek.
 - Aktualizace aplikace (bod 7).
 - O aplikaci: verze aplikace, varianta (provozní / testovací), verze protokolu.
