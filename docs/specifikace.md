@@ -155,12 +155,11 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
 
 **Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen když Portenta v `hello_ack` hlásí `sim_vfd:true` a `sim_temp:true`**. Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
 
-Návrh pro kontrakt (zatím neschváleno, řeší se v chatu firmwaru): aplikace v `hello` posílá navíc `"variant":"test"` nebo `"variant":"release"`, aby firmware věděl, se kterou variantou mluví a mohl to zapsat do svého logu.
+Aplikace v `hello` posílá `"variant":"release"` nebo `"variant":"test"` (kontrakt, návrh 3). Firmware variantu jen zaznamená do logu a `diag`, žádná práva navíc nedává.
 
 ## 9. Otevřené body
 
 - Technologie: navrženo **Kotlin + Jetpack Compose**, knihovna pro živý graf k výběru (musí zvládnout 2 Hz × několik křivek × 20 min plynule).
 - Export do `.alog` – proveditelnost.
-- Pole `variant` v `hello` – schválit v kontraktu.
 - Úložiště receptur a záznamů jen v tabletu, nebo i záloha mimo něj (např. do složky ve sdíleném úložišti).
 - Minimální verze Androidu podle konkrétního tabletu.
