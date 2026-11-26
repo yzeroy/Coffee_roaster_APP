@@ -20,7 +20,7 @@ Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nej
 2. **Neplatná hodnota není nula.** `null` se zobrazuje jako „—“ a v grafu jako mezera, nikdy jako 0.
 3. **Odmítnutí je vidět.** Každý `ack` s `ok:false` se ukáže obsluze srozumitelně (kód `err` přeložený do češtiny + `msg`). Varování (`event` s `level:"warn"`) se ukazují nevtíravě, chyby výrazně.
 4. **Příkaz bez odpovědi** do 2 s se označí jako nepotvrzený a aplikace ho sama neopakuje (kromě `ping`).
-5. **Kritické akce vyžadují potvrzení** dialogem nebo podržením tlačítka: `heat_start`, `recipe_start`, `restart`, uložení PID (`save:true`), `roast_event drop`. `heat_stop` naopak musí být vždy na jeden dotek a na každé obrazovce.
+5. **Kritické akce vyžadují potvrzení** dialogem nebo podržením tlačítka: `heat_start`, `recipe_start`, `restart`, uložení PID (`save:true`), `roast_event drop`. `heat_stop` naopak musí být vždy na jeden dotek: červené tlačítko **STOP ohřevu** dole v levé liště, viditelné na každé obrazovce a nezakryté žádným dialogem ani varováním. Vypne hořák a přeruší běžící recepturu (zůstane nahraná). Nejde o nouzové zastavení – to je hardwarové tlačítko STOP na pražičce, aplikace to nesmí naznačovat.
 6. **Token** pro přihlášení k Portentě se zadává jen v nastavení aplikace a ukládá šifrovaně v zařízení. Nikdy není v kódu ani v repozitáři.
 7. Rozhraní je **česky**, s diakritikou (texty z Portenty přicházejí bez diakritiky a zobrazují se tak, jak přišly).
 
