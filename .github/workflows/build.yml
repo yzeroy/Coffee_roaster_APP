@@ -87,4 +87,9 @@ jobs:
           APK=$(ls app/build/outputs/apk/${{ steps.varianta.outputs.dir }}/release/*.apk | head -1)
           cp "$APK" "prazicka-$TAG.apk"
           if [[ "$TAG" == *-test.* ]]; then PRE="--prerelease"; else PRE=""; fi
-          gh release create "$TAG" "prazicka-$TAG.apk" --title "$TAG" --generate-notes $PRE
+          # Vydání mohlo vzniknout ručně na GitHubu (Releases → Draft a new release) – pak jen přidat APK.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "prazicka-$TAG.apk" --clobber
+          else
+            gh release create "$TAG" "prazicka-$TAG.apk" --title "$TAG" --generate-notes $PRE
+          fi
