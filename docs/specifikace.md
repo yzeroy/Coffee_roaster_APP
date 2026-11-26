@@ -46,7 +46,7 @@ Rozdělená na tři části:
 
 **Graf (většina plochy)**
 - Osa X: čas od vsypání (před vsypáním záporný čas nebo čas od začátku záznamu).
-- Křivky: teplota zrna `bt`, vzduch – okolí `air` (TP1, teplota **vně** pražičky, mění se pomalu), odtah – komín `exh` (TP2), RoR zrna `bt_ror` (vlastní osa vpravo), cílová teplota `sp`, plyn `out`/`gas` (vlastní osa 0–100 %).
+- Křivky: teplota zrna `bt`, vzduch – okolí `air` (TP1, teplota **vně** pražičky, mění se pomalu), odtah – komín `exh` (TP2), křivka vzduchu (okolí) je ve výchozím stavu skrytá – leží pod rozsahem osy, hodnota je v panelu, RoR zrna `bt_ror` (vlastní osa vpravo), cílová teplota `sp`, plyn `out`/`gas` (vlastní osa 0–100 %).
 - Křivka receptury (`curve`) na pozadí, když je nahraná.
 - Svislé značky událostí (`charge`, `dry_end`, `fc_start`, `fc_end`, `sc_start`, `drop`) a chyb.
 - Viditelnost jednotlivých křivek lze zapínat a vypínat; přiblížení a posun gestem, tlačítko „zpět na živý průběh“.
