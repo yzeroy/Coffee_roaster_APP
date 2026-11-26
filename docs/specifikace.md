@@ -8,11 +8,11 @@ Aplikace nahrazuje Artisan a sériovou konzoli Portenty. Zobrazuje průběh pra�
 
 | Dokument | Kde | Co určuje |
 |---|---|---|
-| API kontrakt (`api_kontrakt.md`) | projekt „Prazicka“ v claude.ai | **jediné závazné rozhraní** s Portentou: zprávy, příkazy, povolené stavy, chyby |
+| API (`API.md`) | repozitář firmwaru (hlavní kopie) a projekt „Prazicka“ v claude.ai | **jediné závazné rozhraní** s Portentou: zprávy, příkazy, povolené stavy, chyby |
 | Stav projektu (`prazicka_stav_projektu.md`) | projekt „Prazicka“ | stavový automat, bezpečnostní pravidla, hardware |
 | tato specifikace | `docs/` v tomto repozitáři | co aplikace dělá a jak vypadá |
 
-Když se tato specifikace a kontrakt rozcházejí, platí kontrakt. Změna rozhraní = nejdřív změna kontraktu (řeší se v chatu firmwaru nebo společně), teprve potom aplikace.
+Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nejdřív změna `API.md` (řeší se v chatu firmwaru nebo společně), teprve potom aplikace.
 
 ## 2. Základní zásady
 
@@ -61,7 +61,7 @@ Rozdělená na tři části:
 - Výzvu lze zavřít; tlačítko akce zůstává zvýrazněné.
 
 **Chybový stav (HALTED)**
-- Celoobrazovkový pruh s kódem a příčinou česky (tabulka kódů z kontraktu, neznámý kód = „neznámá chyba (kód N)“), měnič, kterého se chyba týká.
+- Celoobrazovkový pruh s kódem a příčinou česky (tabulka kódů z API, neznámý kód = „neznámá chyba (kód N)“), měnič, kterého se chyba týká.
 - Tlačítko `Restart` (jen když STOP i PSU jsou v pořádku, jinak vysvětlení, co je potřeba).
 - Po restartu aplikace upozorní, že ohřev je blokovaný, dokud ho obsluha nezruší (`heat_blocked`).
 
@@ -108,7 +108,7 @@ Rozdělená na tři části:
 
 ## 5. Spojení
 
-Podle kontraktu (bod 2 a 3):
+Podle API (body 4 a 5):
 
 - Po spuštění se aplikace připojí, pošle `hello`; při `bad_token` nebo `proto` přestane zkoušet a zobrazí důvod (u `proto`: je potřeba aktualizovat aplikaci nebo firmware).
 - `ping` každou 1 s, když se jinak nic neposílá.
@@ -146,7 +146,7 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
 
 **Obrazovka Test** (jen testovací varianta):
 
-- **Simulace na straně firmwaru** – příkazy `sim_flame`, `sim_temp`, `sim_vfd` z kontraktu (plamen nechytí, nastavení teplot, poruchy měničů).
+- **Simulace na straně firmwaru** – příkazy `sim_flame`, `sim_temp`, `sim_vfd`, `sim_di`, `sim_reset` z API bodu 12 (plamen nechytí, teploty včetně neplatného čtení, poruchy měničů, simulovaná ztráta STOP/PSU) a přehled aktivních poruch ze `status.sim`.
 - **Simulace na straně aplikace**:
   - výpadek spojení: aplikace přestane posílat `ping` a příkazy na zvolenou dobu (např. 5 s – obnoví se v okně, 20 s – panika),
   - úplné odpojení a znovupřipojení,
@@ -155,7 +155,7 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
 
 **Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen když Portenta v `hello_ack` hlásí `sim_vfd:true` a `sim_temp:true`**. Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
 
-Aplikace v `hello` posílá `"variant":"release"` nebo `"variant":"test"` (kontrakt, návrh 3). Firmware variantu jen zaznamená do logu a `diag`, žádná práva navíc nedává.
+Aplikace v `hello` posílá `"variant":"release"` nebo `"variant":"test"` (API bod 4.1). Firmware variantu jen zaznamená do logu a `diag`, žádná práva navíc nedává.
 
 ## 9. Otevřené body
 

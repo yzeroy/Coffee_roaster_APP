@@ -4,10 +4,10 @@ Android aplikace pro tablet, která ovládá pražičku kávy přes Portenta Mac
 
 ## Zdroje pravdy
 
-- **API kontrakt** `claude/api_kontrakt.md` v claude.ai projektu „Prazicka“ je jediné závazné rozhraní s firmwarem. Před prací na komunikaci ho vždy přečti z projektu, ne z paměti.
+- **API** `API.md` je jediné závazné rozhraní s firmwarem. Hlavní kopie je v kořeni repozitáře firmwaru (https://github.com/yzeroy/Coffee_roaster_firmware), pracovní kopie `claude/API.md` v claude.ai projektu „Prazicka“. Před prací na komunikaci ho vždy přečti, ne z paměti.
 - Stav projektu `claude/prazicka_stav_projektu.md` (projekt „Prazicka“) – stavový automat a bezpečnostní pravidla.
 - `docs/specifikace.md` – co aplikace dělá. `docs/vetve_a_vydavani.md` – větve, varianty, vydávání.
-- Firmware se vyvíjí v samostatném chatu a repozitáři. Rozhraní neměň jednostranně: když aplikace potřebuje změnu, navrhni nejdřív úpravu kontraktu a nech ji schválit.
+- Firmware se vyvíjí v samostatném chatu a repozitáři. Rozhraní neměň jednostranně: když aplikace potřebuje změnu, navrhni nejdřív úpravu `API.md` (obě kopie) a nech ji schválit.
 
 ## Zásady
 
