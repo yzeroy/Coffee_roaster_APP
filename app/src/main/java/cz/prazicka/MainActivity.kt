@@ -5,6 +5,8 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -27,7 +29,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            PrazickaTheme { AppRoot(vm) }
+            val st by vm.settings.collectAsState()
+            PrazickaTheme(theme = st.theme, scale = st.uiScale / 100f) { AppRoot(vm) }
         }
     }
 }

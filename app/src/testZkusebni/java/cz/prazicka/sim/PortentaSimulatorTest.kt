@@ -223,4 +223,69 @@ class PortentaSimulatorTest {
         oldClosed = h.closed
         assertTrue(oldClosed)
     }
+
+    @Test
+    fun teplotaOkoliAKominu() {
+        val h = booted()
+        assertTrue(h.send("heat_start") { put("sp", 200.0) }.bool("ok") == true)
+        var maxDiff = 0.0
+        var airMin = 99.0
+        var airMax = 0.0
+        for (i in 1..900) {
+            h.run(1.0)
+            val t = h.status().temps
+            val bt = t.bt ?: continue
+            val exh = t.exh ?: continue
+            val air = t.air ?: continue
+            maxDiff = maxOf(maxDiff, kotlin.math.abs(exh - bt))
+            airMin = minOf(airMin, air); airMax = maxOf(airMax, air)
+        }
+        assertTrue("odtah se liší od zrna o $maxDiff", maxDiff <= 10.0)
+        assertTrue("okolí $airMin–$airMax", airMin >= 22.0 && airMax <= 28.0)
+        assertTrue("zrno má dosáhnout cíle", kotlin.math.abs((h.status().temps.bt ?: 0.0) - 200.0) < 5.0)
+    }
+
+    @Test
+    fun predehrevSVydrzi() {
+        val h = booted()
+        val r = Recipe.sample().copy(preheatS = 120)
+        assertTrue(h.send("recipe_load") { put("recipe", r.toApiJson()) }.bool("ok") == true)
+        assertTrue(h.send("recipe_start").bool("ok") == true)
+        assertTrue("teplota předehřevu má být dosažena", h.runUntil(1200.0) { it.roast?.preheatLeftS != null })
+        assertTrue(h.events("roast").any { it.str("roast_event") == "preheat_hold" })
+        assertFalse(h.status().roast!!.chargeReady)
+        h.run(60.0)
+        val left = h.status().roast!!.preheatLeftS!!
+        assertTrue("zbývá $left", left in 50.0..65.0)
+        assertFalse(h.status().roast!!.chargeReady)
+        assertTrue(h.runUntil(120.0) { it.roast?.chargeReady == true })
+    }
+
+    @Test
+    fun ladeniZKliduSProhratim() {
+        val h = booted()
+        val ack = h.send("autotune_start") {
+            put("sp", 180.0); put("gas_low", 20.0); put("gas_high", 60.0); put("cycles", 2)
+            put("soak_sp", 190.0); put("soak_s", 120)
+        }
+        assertTrue(ack.toString(), ack.bool("ok") == true)
+        assertEquals("ignite", h.status().ctrl.autotune?.phase)
+        assertFalse(h.send("heat_start").bool("ok") == true)
+        assertTrue("má přejít do prohřátí", h.runUntil(120.0) { it.ctrl.autotune?.phase == "soak" })
+        assertEquals(190.0, h.status().ctrl.sp ?: 0.0, 0.01)
+        assertEquals("busy", h.send("gas_set") { put("pct", 50.0) }.str("err"))
+        assertTrue("prohřátí má odpočítávat", h.runUntil(900.0) { (it.ctrl.autotune?.phaseLeftS ?: 999.0) < 100.0 })
+        assertTrue("má najet na cíl", h.runUntil(400.0) { it.ctrl.autotune?.phase == "approach" })
+        assertTrue("mají začít kmity", h.runUntil(700.0) { it.ctrl.autotune?.phase == "oscillate" })
+        var done = false
+        for (i in 1..2400) {
+            h.run(1.0)
+            if (h.received.any { it.str("t") == "autotune_result" }) { done = true; break }
+        }
+        assertTrue("ladění má skončit", done)
+        val res = h.received.last { it.str("t") == "autotune_result" }
+        assertTrue(res.toString(), res.bool("ok") == true)
+        assertEquals(RoasterState.RUNNING, h.status().state)
+        assertEquals("manual", h.status().ctrl.mode)
+    }
 }

@@ -29,7 +29,7 @@ import kotlin.math.min
 /**
  * Vestavěný simulátor Portenty pro testovací variantu aplikace.
  *
- * Mluví stejným protokolem jako firmware (API.md 1.3) a napodobuje stavový automat,
+ * Mluví stejným protokolem jako firmware (API.md 1.7) a napodobuje stavový automat,
  * měniče, hořák, jednoduchý tepelný model, PID, automatické ladění a receptury.
  * Neslouží k ověření firmwaru – jen k tomu, aby aplikace šla zkoušet bez desky.
  *
@@ -114,7 +114,10 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private val physicalFlame get() = power && ignition && !flameFails
 
     // ---- teploty (model) a simulované podržení
-    private var air = 24.0
+    /** Horký vzduch v bubnu – jen vnitřní veličina modelu, Portenta ho neměří. */
+    private var drumAir = 24.0
+    /** Vzduch / okolí TP1 – teplota vně pražičky. */
+    private var air = 25.0
     private var bt = 24.0
     private var exh = 24.0
     private var beans = 0.0
@@ -138,9 +141,13 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private var dFilt = 0.0
 
     // ---- automatické ladění
-    private class Autotune(val sp: Double, val low: Double, val high: Double, val cycles: Int) {
+    private class Autotune(val sp: Double, val low: Double, val high: Double, val cycles: Int, val soakSp: Double, val soakS: Double) {
         var phase = "approach"
         var startMs = 0L
+        var phaseMs = 0L
+        var soakReachedMs = -1L
+        var approachMs = -1L
+        var lastCrossMs = 0L
         var cycle = 0
         var above = false
         var lastUpMs = -1L
@@ -159,6 +166,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private var chargeReady = false
     private var dropReady = false
     private var inBandMs = 0L
+    private var preheatReachedMs: Long? = null
     private var overrideGas = false
     private val overrideVfd = BooleanArray(4)
     private var coolNoLinkMs = 0L
@@ -447,17 +455,23 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private fun updateThermal(dt: Double) {
         val heat = if (physicalFlame) gas else 0.0
         val airflow = vfdPct(1).coerceIn(0.0, 100.0) / 100.0
-        val airTarget = 24.0 + heat * 3.0 * (1.0 - 0.25 * airflow)
-        air += (airTarget - air) * dt / 25.0
+        val airTarget = 24.0 + heat * 4.0 * (1.0 - 0.25 * airflow)
+        drumAir += (airTarget - drumAir) * dt / 25.0
         val tauBt = 70.0 + 110.0 * beans
-        bt += ((air - 15.0) - bt) * dt / tauBt
-        exh += ((0.55 * air + 0.45 * bt) - exh) * dt / 20.0
+        bt += ((drumAir - 15.0) - bt) * dt / tauBt
+        // komín sleduje zrno, za plamene o něco výš; nikdy dál než ±10 °C
+        val exhTarget = bt + (if (heat > 0) 6.0 else -2.0)
+        exh += (exhTarget - exh) * dt / 15.0
+        exh = exh.coerceIn(bt - 9.5, bt + 9.5)
+        // okolí: kolem 25 °C, jen pomalý drift
+        air += (25.0 - air) * dt / 120.0
     }
 
     private fun reading(ch: Int): Double? {
         if (holdActive[ch]) return holdValue[ch]
         val v = when (ch) { 0 -> bt; 1 -> air; else -> exh }
-        return v + (rnd.nextGaussian() * 0.02)
+        val noise = if (ch == 1) 0.05 else 0.02
+        return v + (rnd.nextGaussian() * noise)
     }
 
     private fun updateRor() {
@@ -615,6 +629,13 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
 
     private fun onLit() {
         setState("RUNNING")
+        val tune = at
+        if (tune != null && tune.phase == "ignite") {
+            mode = "manual"
+            gas = IGNITION_GAS
+            atNextAfterIgnite(tune)
+            return
+        }
         if (phase == "preheat") {
             mode = "recipe"
             bumpless(recipeTarget() ?: sp)
@@ -675,8 +696,15 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
 
     private fun roastT(): Double? = chargeMs?.let { (simMs - it) / 1000.0 }
 
+    private fun preheatLeft(): Double? {
+        if (phase != "preheat") return null
+        val reached = preheatReachedMs ?: return null
+        val hold = recipe?.dbl("preheat_s") ?: 60.0
+        return max(0.0, hold - (simMs - reached) / 1000.0)
+    }
+
     private fun currentSp(): Double? = when {
-        at != null -> at!!.sp
+        at != null -> at!!.let { a -> when (a.phase) { "soak" -> a.soakSp; "ignite" -> a.soakSp.takeIf { a.soakS > 0 } ?: a.sp; else -> a.sp } }
         mode == "pid" -> sp
         mode == "recipe" -> recipeTarget() ?: (if (phase == "roast") null else sp)
         else -> null
@@ -686,7 +714,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         if (state != "RUNNING" || flame != 1 || dt <= 0) return
         val b = reading(0)
         val tune = at
-        if (tune != null) { updateAutotune(tune, b); return }
+        if (tune != null) { if (tune.phase != "ignite") updateAutotune(tune, b, dt); return }
         if (b == null && (mode == "pid" || mode == "recipe")) {
             mode = "manual"
             event("warn", "mode", "neplatna teplota zrna – rucni rezim") { put("mode", "manual"); put("reason", "sensor") }
@@ -725,32 +753,76 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         var out = kp * err + ki * newInteg + kd * deriv
         if (out in 10.0..100.0) integ = newInteg
         out = out.coerceIn(10.0, 100.0)
-        if (abs(out - gas) > 0.05) dirty = true
+        // status se posílá jen periodicky (jako firmware) – změna plynu sama o sobě status nevyvolá
         gas = r1(out)
     }
 
-    private fun updateAutotune(a: Autotune, b: Double?) {
-        val elapsed = (simMs - a.startMs) / 1000.0
+    private fun atPhase(a: Autotune, ph: String, msg: String) {
+        a.phase = ph
+        a.phaseMs = simMs
+        event("info", "autotune", msg) { put("phase", ph); put("cycle", a.cycle); put("of", a.cycles) }
+        dirty = true
+    }
+
+    private fun atNextAfterIgnite(a: Autotune) {
+        if (a.soakS > 0) {
+            bumpless(a.soakSp)
+            atPhase(a, "soak", "ladeni: prohrati bubnu na ${a.soakSp}")
+        } else {
+            bumpless(a.sp)
+            a.approachMs = simMs
+            atPhase(a, "approach", "ladeni: najeti na cil ${a.sp}")
+        }
+    }
+
+    private fun soakLeft(a: Autotune): Double? {
+        if (a.phase != "soak") return null
+        if (a.soakReachedMs < 0) return a.soakS
+        return max(0.0, a.soakS - (simMs - a.soakReachedMs) / 1000.0)
+    }
+
+    private fun updateAutotune(a: Autotune, b: Double?, dt: Double) {
         when {
             b == null -> { abortAutotune("neplatna teplota zrna"); return }
-            b > a.sp + 25.0 -> { abortAutotune("prekrocena teplota sp+25"); return }
-            elapsed > 1800.0 -> { abortAutotune("ladeni trvalo dele nez 30 min"); return }
+            b > max(a.sp, a.soakSp) + 25.0 -> { abortAutotune("prekrocena teplota o vic nez 25 °C nad cil"); return }
+            a.approachMs >= 0 && (simMs - a.approachMs) > 1_800_000L -> { abortAutotune("ladeni trvalo dele nez 30 min"); return }
         }
         val v = b!!
-        if (a.phase == "approach") {
-            gas = a.high
-            if (v >= a.sp) {
-                a.phase = "oscillate"; a.above = true; a.maxBt = v; a.minBt = v
-                event("info", "autotune", "ladeni: kmity") { put("phase", "oscillate"); put("cycle", 0); put("of", a.cycles) }
-                dirty = true
+        when (a.phase) {
+            "soak" -> {
+                pidStep(a.soakSp, v, dt)
+                if (a.soakReachedMs < 0 && abs(v - a.soakSp) <= 3.0) {
+                    a.soakReachedMs = simMs
+                    event("info", "autotune", "ladeni: teplota prohrati dosazena") { put("phase", "soak"); put("cycle", 0); put("of", a.cycles) }
+                }
+                if ((soakLeft(a) ?: 1.0) <= 0.0) {
+                    bumpless(a.sp)
+                    a.approachMs = simMs
+                    atPhase(a, "approach", "ladeni: najeti na cil ${a.sp}")
+                }
+                return
             }
-            return
+            "approach" -> {
+                pidStep(a.sp, v, dt)
+                if (abs(v - a.sp) <= 1.0) {
+                    a.above = v >= a.sp
+                    a.maxBt = v; a.minBt = v
+                    a.lastCrossMs = simMs
+                    atPhase(a, "oscillate", "ladeni: kmity")
+                } else if (simMs - a.phaseMs > 600_000L) {
+                    abortAutotune("teplota nedosahla cile")
+                }
+                return
+            }
         }
+        // oscillate
         a.maxBt = max(a.maxBt, v); a.minBt = min(a.minBt, v)
         if (a.above && v < a.sp - 0.5) {
             a.above = false
+            a.lastCrossMs = simMs
         } else if (!a.above && v > a.sp + 0.5) {
             a.above = true
+            a.lastCrossMs = simMs
             if (a.lastUpMs >= 0) {
                 a.periods.add((simMs - a.lastUpMs) / 1000.0)
                 a.amps.add((a.maxBt - a.minBt) / 2.0)
@@ -760,6 +832,10 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             }
             a.lastUpMs = simMs
             a.maxBt = v; a.minBt = v
+        }
+        if (simMs - a.lastCrossMs > 480_000L) {
+            abortAutotune(if (a.above) "min. plyn je prilis vysoko – sniz gas_low" else "max. plyn nestaci na cil – zvys gas_high")
+            return
         }
         gas = if (a.above) a.low else a.high
         if (a.cycle >= a.cycles && a.periods.isNotEmpty()) {
@@ -806,8 +882,14 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
                 if (state == "RUNNING" && !chargeReady) {
                     val b = reading(0)
                     val target = r.dbl("charge_bt") ?: return
-                    if (b != null && abs(b - target) <= 3.0) inBandMs += (dt * 1000).toLong() else inBandMs = 0
-                    if (inBandMs >= 60_000) {
+                    val inBand = b != null && abs(b - target) <= 3.0
+                    if (inBand && preheatReachedMs == null) {
+                        preheatReachedMs = simMs
+                        dirty = true
+                        event("info", "roast", "teplota predehrevu dosazena – vydrz") { put("roast_event", "preheat_hold"); put("roast_t", JsonNull); put("run", run) }
+                    }
+                    val left = preheatLeft()
+                    if (inBand && left != null && left <= 0.0) {
                         chargeReady = true
                         dirty = true
                         event("info", "roast", "predehrev hotovy – vsyp zrno") { put("roast_event", "charge_ready"); put("roast_t", JsonNull); put("run", run) }
@@ -975,6 +1057,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
 
     private fun cmdHeatStart(o: JsonObject) {
         requireState(state == "READY", "heat_start jen ve stavu READY")
+        if (at != null) throw CmdError("busy", "probiha ladeni")
         requireState(!heatBlocked, "ohrev je po restartu zablokovany – nejdriv heat_stop")
         requireState(!recipeRunning(), "bezi receptura")
         val target = num(o, "sp", 50.0, 260.0, required = false)
@@ -1075,17 +1158,29 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     }
 
     private fun cmdAutotuneStart(o: JsonObject) {
+        requireState(state == "RUNNING" || state == "READY", "ladeni jen ve stavu READY nebo RUNNING")
         if (at != null) throw CmdError("busy", "ladeni uz probiha")
-        requireState(state == "RUNNING", "ladeni jen ve stavu RUNNING")
         requireState(!recipeRunning(), "bezi receptura")
+        if (state == "READY") requireState(!heatBlocked, "ohrev je po restartu zablokovany – nejdriv heat_stop")
         val tsp = num(o, "sp", 100.0, 240.0)!!
         val low = num(o, "gas_low", 10.0, 90.0)!!
         val high = num(o, "gas_high", 20.0, 100.0)!!
         val cycles = int(o, "cycles", 2, 6)
+        val soakSp = num(o, "soak_sp", 50.0, 260.0, required = false) ?: tsp
+        val soakS = num(o, "soak_s", 0.0, 3600.0, required = false) ?: 0.0
         if (low > high - 10) throw CmdError("out_of_range", "gas_low musi byt aspon o 10 mensi nez gas_high", "gas_low")
-        at = Autotune(tsp, low, high, cycles).also { it.startMs = simMs }
-        mode = "manual"
-        event("info", "autotune", "ladeni zahajeno") { put("phase", "approach"); put("cycle", 0); put("of", cycles) }
+        val a = Autotune(tsp, low, high, cycles, r1(soakSp), soakS).also { it.startMs = simMs; it.phaseMs = simMs }
+        at = a
+        event("info", "autotune", "ladeni zahajeno") { put("phase", if (state == "READY") "ignite" else "soak"); put("cycle", 0); put("of", cycles) }
+        if (state == "READY") {
+            a.phase = "ignite"
+            mode = "manual"
+            startSp = null
+            startHeat()
+        } else {
+            mode = "manual"
+            atNextAfterIgnite(a)
+        }
         dirty = true
     }
 
@@ -1104,11 +1199,12 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
 
     private fun cmdRecipeStart() {
         requireState(state == "READY", "recipe_start jen ve stavu READY")
+        if (at != null) throw CmdError("busy", "probiha ladeni")
         requireState(!heatBlocked, "ohrev je po restartu zablokovany – nejdriv heat_stop")
         requireState(phase == "loaded" && recipe != null, "receptura neni nahrana")
         run++
         phase = "preheat"
-        chargeReady = false; dropReady = false; inBandMs = 0; chargeMs = null
+        chargeReady = false; dropReady = false; inBandMs = 0; chargeMs = null; preheatReachedMs = null
         overrideGas = false
         for (i in 0..3) overrideVfd[i] = false
         beans = 0.0
@@ -1128,7 +1224,8 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
                 phase = "roast"
                 chargeReady = false
                 bt = bt * 0.45 + 24.0 * 0.55
-                air -= 30.0
+                drumAir -= 30.0
+                exh = exh.coerceIn(bt - 9.5, bt + 9.5)
                 beans = 1.0
                 btHist.clear()
                 if (!overrideGas && mode == "recipe") gas = recipe?.dbl("charge_gas") ?: gas
@@ -1267,6 +1364,8 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             val a = at
             if (a == null) put("autotune", JsonNull) else putJsonObject("autotune") {
                 put("phase", a.phase); put("cycle", a.cycle); put("of", a.cycles); put("elapsed_s", r1((simMs - a.startMs) / 1000.0))
+                val left = soakLeft(a)
+                if (left == null) put("phase_left_s", JsonNull) else put("phase_left_s", r1(left))
             }
         }
         val r = recipe
@@ -1278,6 +1377,8 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             if (rid == null) put("recipe_id", JsonNull) else put("recipe_id", rid)
             val t = roastT()
             if (t == null || (phase != "roast" && phase != "cooling")) put("t", JsonNull) else put("t", r1(t))
+            val pl = preheatLeft()
+            if (pl == null) put("preheat_left_s", JsonNull) else put("preheat_left_s", r1(pl))
             put("charge_ready", phase == "preheat" && chargeReady)
             put("drop_ready", phase == "roast" && dropReady)
             putJsonObject("override") {

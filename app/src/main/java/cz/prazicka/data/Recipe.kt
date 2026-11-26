@@ -29,6 +29,8 @@ data class Recipe(
     val id: String = UUID.randomUUID().toString().take(8),
     val name: String,
     val chargeBt: Double,
+    /** Výdrž na teplotě předehřevu (s), API 1.7 `preheat_s`. */
+    val preheatS: Int = 60,
     val chargeGas: Double,
     val pidDelayS: Int,
     val curve: List<CurvePoint>,
@@ -56,6 +58,7 @@ data class Recipe(
         put("id", id)
         put("name", name)
         put("charge_bt", r1(chargeBt))
+        put("preheat_s", preheatS)
         put("charge_gas", r1(chargeGas))
         put("pid_delay_s", pidDelayS)
         putJsonArray("curve") {
@@ -88,6 +91,7 @@ data class Recipe(
                 id = o.str("id") ?: UUID.randomUUID().toString().take(8),
                 name = o.str("name") ?: "Bez názvu",
                 chargeBt = o.dbl("charge_bt") ?: 200.0,
+                preheatS = o.lng("preheat_s")?.toInt() ?: 60,
                 chargeGas = o.dbl("charge_gas") ?: 60.0,
                 pidDelayS = o.lng("pid_delay_s")?.toInt() ?: 90,
                 curve = o.arr("curve")?.mapNotNull { e ->
@@ -117,6 +121,7 @@ data class Recipe(
             id = "etiopie1",
             name = "Etiopie light",
             chargeBt = 200.0,
+            preheatS = 300,
             chargeGas = 60.0,
             pidDelayS = 90,
             curve = listOf(CurvePoint(0, 200.0), CurvePoint(90, 100.0), CurvePoint(240, 150.0), CurvePoint(480, 185.0), CurvePoint(600, 198.0)),
@@ -165,6 +170,10 @@ object RecipeValidator {
             if (id.length > 36 || id.any { it.code !in 0x20..0x7E }) return RecipeError("id", "id musí být ASCII do 36 znaků")
         }
         num(r, "charge_bt", 50.0, 260.0).second?.let { return it }
+        if (r.containsKey("preheat_s")) {
+            num(r, "preheat_s", 0.0, 3600.0).second?.let { return it }
+            if (!isInt(r["preheat_s"])) return RecipeError("preheat_s", "preheat_s musí být celé číslo")
+        }
         num(r, "charge_gas", 10.0, 100.0).second?.let { return it }
         val (pidDelay, e1) = num(r, "pid_delay_s", 0.0, 600.0)
         if (e1 != null) return e1

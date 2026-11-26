@@ -39,7 +39,7 @@ data class VfdState(val name: String, val cmd: Double?, val pct: Double?, val hz
 
 data class Fault(val code: Int, val vfd: Int?, val ms: Long?, val msg: String?)
 
-data class AutotuneProgress(val phase: String, val cycle: Int, val of: Int, val elapsedS: Double?)
+data class AutotuneProgress(val phase: String, val cycle: Int, val of: Int, val elapsedS: Double?, val phaseLeftS: Double? = null)
 
 data class Ctrl(val mode: String, val sp: Double?, val out: Double?, val autotune: AutotuneProgress?)
 
@@ -49,6 +49,7 @@ data class Roast(
     val recipe: String,
     val recipeId: String?,
     val t: Double?,
+    val preheatLeftS: Double?,
     val chargeReady: Boolean,
     val dropReady: Boolean,
     val overrideGas: Boolean,
@@ -130,7 +131,7 @@ data class Status(
                     sp = ctrl?.dbl("sp"),
                     out = ctrl?.dbl("out"),
                     autotune = at?.let {
-                        AutotuneProgress(it.str("phase") ?: "?", it.int("cycle") ?: 0, it.int("of") ?: 0, it.dbl("elapsed_s"))
+                        AutotuneProgress(it.str("phase") ?: "?", it.int("cycle") ?: 0, it.int("of") ?: 0, it.dbl("elapsed_s"), it.dbl("phase_left_s"))
                     },
                 ),
                 roast = roast?.let { r ->
@@ -141,6 +142,7 @@ data class Status(
                         recipe = r.str("recipe") ?: "",
                         recipeId = r.str("recipe_id"),
                         t = r.dbl("t"),
+                        preheatLeftS = r.dbl("preheat_left_s"),
                         chargeReady = r.bool("charge_ready") ?: false,
                         dropReady = r.bool("drop_ready") ?: false,
                         overrideGas = ov?.bool("gas") ?: false,
@@ -317,6 +319,10 @@ object Texts {
         "fc_end" -> "1. crack konec"
         "sc_start" -> "2. crack"
         "drop" -> "Vysypání"
+        "preheat" -> "Předehřev"
+        "preheat_hold" -> "Teplota dosažena"
+        "charge_ready" -> "Předehřev hotov"
+        "reset" -> "Reset grafu"
         "tp" -> "Bod zvratu"
         "note" -> "Poznámka"
         else -> e

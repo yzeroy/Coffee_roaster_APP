@@ -1,6 +1,15 @@
 package cz.prazicka.ui
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.SideEffect
+import cz.prazicka.protocol.fmt0
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,9 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
@@ -66,6 +73,8 @@ fun AppRoot(vm: AppViewModel) {
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     val go: (Screen) -> Unit = { screen = it }
 
+    var attention by remember { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Column(Modifier.fillMaxSize()) {
             if (BuildConfig.IS_TEST) TestBar(vm)
@@ -76,17 +85,45 @@ fun AppRoot(vm: AppViewModel) {
                         Screen.Roast -> RoastScreen(vm, go)
                         Screen.Recipes -> RecipesScreen(vm, go)
                         Screen.Records -> RecordsScreen(vm, go)
-                        Screen.Pid -> PidScreen(vm)
-                        Screen.Diag -> DiagScreen(vm)
-                        Screen.Settings -> SettingsScreen(vm)
+                        Screen.Pid -> SubScreen("Kalibrace PID", { go(Screen.Settings) }) { PidScreen(vm) }
+                        Screen.Diag -> SubScreen("Diagnostika", { go(Screen.Settings) }) { DiagScreen(vm) }
+                        Screen.Settings -> SettingsScreen(vm, go)
                         Screen.Test -> Variant.Screen(vm)
                     }
-                    Overlays(vm, go)
+                    Overlays(vm, go) { attention = it }
                 }
             }
         }
+        if (attention) AttentionFrame()
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp).widthIn(max = 640.dp))
     }
+}
+
+/** Obrazovka otevřená z Nastavení (PID, Diagnostika) – s tlačítkem zpět. */
+@Composable
+private fun SubScreen(title: String, back: () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 14.dp, top = 10.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            SecondaryButton("‹ Nastavení", back, height = 40.dp)
+            Text(title, color = C.muted, fontSize = 13.sp)
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+    }
+}
+
+/** Blikající zelený okraj celé aplikace – upoutá pozornost u výzev (vsyp zrno, vysyp). Dotyky nepřebírá. */
+@Composable
+private fun AttentionFrame() {
+    val tr = rememberInfiniteTransition(label = "blik")
+    val a by tr.animateFloat(
+        initialValue = 1f, targetValue = 0.1f,
+        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse), label = "alfa",
+    )
+    Box(Modifier.fillMaxSize().border(10.dp, C.ok.copy(alpha = a)))
 }
 
 @Composable
@@ -122,13 +159,11 @@ private fun Rail(screen: Screen, go: (Screen) -> Unit, onStop: () -> Unit) {
         RailItem("Pražení", screen == Screen.Roast, { go(Screen.Roast) }) { FlameIcon(it) }
         RailItem("Receptury", screen == Screen.Recipes, { go(Screen.Recipes) }) { VecIcon(Icons.Filled.List, it) }
         RailItem("Záznamy", screen == Screen.Records, { go(Screen.Records) }) { VecIcon(Icons.Filled.DateRange, it) }
-        RailItem("PID", screen == Screen.Pid, { go(Screen.Pid) }) { VecIcon(Icons.Filled.Build, it) }
-        RailItem("Diagnostika", screen == Screen.Diag, { go(Screen.Diag) }) { VecIcon(Icons.Filled.Info, it) }
         if (Variant.hasTestScreen) {
-            RailItem("Test", screen == Screen.Test, { go(Screen.Test) }, activeBg = Color(0xFF3A2E12), activeFg = C.warnText) { VecIcon(Icons.Filled.Warning, it) }
+            RailItem("Test", screen == Screen.Test, { go(Screen.Test) }, activeBg = C.testActiveBg, activeFg = C.warnText) { VecIcon(Icons.Filled.Warning, it) }
         }
         Spacer(Modifier.weight(1f))
-        RailItem("Nastavení", screen == Screen.Settings, { go(Screen.Settings) }) { VecIcon(Icons.Filled.Settings, it) }
+        RailItem("Nastavení", screen == Screen.Settings || screen == Screen.Pid || screen == Screen.Diag, { go(Screen.Settings) }) { VecIcon(Icons.Filled.Settings, it) }
         Spacer(Modifier.height(6.dp))
         // STOP ohřevu: vždy viditelné, žádný dialog ho nezakryje (není to nouzové zastavení).
         Column(
@@ -137,7 +172,7 @@ private fun Rail(screen: Screen, go: (Screen) -> Unit, onStop: () -> Unit) {
                 .height(82.dp)
                 .clip(RoundedCornerShape(12.dp))
                 .background(C.stop)
-                .border(2.dp, Color(0xFFFF8080), RoundedCornerShape(12.dp))
+                .border(2.dp, C.recBorder, RoundedCornerShape(12.dp))
                 .clickable(onClick = onStop)
                 .semantics { contentDescription = "Stop ohřevu – vypne hořák" },
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -180,8 +215,10 @@ private fun RailItem(
 
 /** Překryvy nad obsahem (lišta se STOP zůstává volná): výpadek spojení, převzetí, chyba, výzvy. */
 @Composable
-private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
+private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, onAttention: (Boolean) -> Unit) {
     val status by vm.status.collectAsState()
+    val selftest by vm.selftest.collectAsState()
+    val preheat by vm.manualPreheat.collectAsState()
     val link by vm.link.collectAsState()
     val lastSent by vm.client.lastSentAt.collectAsState()
     val settings by vm.settings.collectAsState()
@@ -191,6 +228,7 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
     var hiddenFaultMs by remember { mutableStateOf<Long?>(null) }
     var dismissedChargeRun by remember { mutableStateOf(-1) }
     var dismissedDropRun by remember { mutableStateOf(-1) }
+    var dismissedManualCharge by remember { mutableStateOf(false) }
 
     val s = status
     val connected = link is LinkState.Connected
@@ -202,6 +240,10 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
     val dropReady = connected && roast != null && roast.dropReady && dismissedDropRun != roast.run
     LaunchedEffect(chargeReady) { if (chargeReady && settings.soundPrompts) Beeper.beep() }
     LaunchedEffect(dropReady) { if (dropReady && settings.soundPrompts) Beeper.beep() }
+    val manualDone = connected && preheat?.phase == cz.prazicka.data.ManualPreheat.Phase.DONE && roast?.running != true
+    LaunchedEffect(manualDone) {
+        if (manualDone) { dismissedManualCharge = false; if (settings.soundPrompts) Beeper.beep() }
+    }
     val linkLost = !connected && heatingKnown && link !is LinkState.Idle
     LaunchedEffect(linkLost) { if (linkLost && settings.soundLink) Beeper.beep(alarm = true) }
 
@@ -215,18 +257,18 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
         }
         linkLost -> {
             val left = (15 - (now - lastSent) / 1000).coerceAtLeast(0)
-            Modal(border = C.danger, bg = Color(0xFF1C1416), width = 640.dp) {
+            Modal(border = C.danger, bg = C.modalDangerBg, width = 640.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    Text("$left s", fontFamily = Mono, fontSize = 60.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFFFF8080))
+                    Text("$left s", fontFamily = Mono, fontSize = 60.sp, fontWeight = FontWeight.SemiBold, color = C.recBorder)
                     Column {
                         Text("Spojení s Portentou ztraceno", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         Text(
                             if (left > 0) "Za $left s Portenta vypne hořák a přejde do chyby." else "Portenta už pravděpodobně vypnula hořák (chyba 7).",
-                            color = Color(0xFFE0B4B4),
+                            color = C.linkText,
                         )
                     }
                 }
-                Text("Pražení zatím běží dál. Když se spojení do 15 s neobnoví, buben a odtah poběží na maximum. Zkontroluj WiFi tabletu nebo router.", color = Color(0xFFE9D6D6))
+                Text("Pražení zatím běží dál. Když se spojení do 15 s neobnoví, buben a odtah poběží na maximum. Zkontroluj WiFi tabletu nebo router.", color = C.text)
                 val l = link
                 Text(
                     when (l) {
@@ -234,10 +276,11 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
                         is LinkState.Failed -> l.reason
                         else -> ""
                     },
-                    color = Color(0xFFE0B4B4), fontSize = 13.sp,
+                    color = C.linkText, fontSize = 13.sp,
                 )
             }
         }
+        connected && selftest != null -> SelftestDialog(selftest!!) { vm.dismissSelftest() }
         connected && s != null && s.state == RoasterState.HALTED && hiddenFaultMs != (s.fault.ms ?: -1L) -> {
             Modal(border = C.danger, width = 660.dp) {
                 Text("CHYBA · kód ${s.fault.code}", color = C.dangerText, fontWeight = FontWeight.SemiBold)
@@ -249,8 +292,8 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Chip(if (s.stop) "STOP v pořádku" else "STOP stisknuté", if (s.stop) C.okText else C.dangerText, if (s.stop) C.okBg else Color(0xFF3A1A1C))
-                    Chip(if (s.psu) "PSU v pořádku" else "PSU bez 24 V", if (s.psu) C.okText else C.dangerText, if (s.psu) C.okBg else Color(0xFF3A1A1C))
+                    Chip(if (s.stop) "STOP v pořádku" else "STOP stisknuté", if (s.stop) C.okText else C.dangerText, if (s.stop) C.okBg else C.dangerBg)
+                    Chip(if (s.psu) "PSU v pořádku" else "PSU bez 24 V", if (s.psu) C.okText else C.dangerText, if (s.psu) C.okBg else C.dangerBg)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     PrimaryButton("Restart", { vm.restart() }, enabled = s.stop && s.psu, height = 54.dp)
@@ -263,15 +306,23 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
                 }
             }
         }
-        chargeReady && s != null -> Modal(border = C.bt) {
-            Text("Předehřev hotový", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text("Teplota zrna drží cíl ±3 °C už 60 s. Vsyp zrno a potvrď vsypání.", color = C.sp)
+        chargeReady && s != null -> Modal(border = C.ok) {
+            Text("Předehřev hotový – nasyp zrno do bubnu", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("Teplota zrna dosáhla cíle a výdrž předehřevu uplynula. Vsyp zrno a potvrď vsypání.", color = C.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Vsypáno", { vm.roastMark("charge") }, Modifier.weight(1f), container = C.bt, height = 60.dp)
                 SecondaryButton("Zavřít", { dismissedChargeRun = s.roast?.run ?: -1 }, height = 60.dp)
             }
         }
-        dropReady && s != null -> Modal(border = C.bt) {
+        manualDone && !dismissedManualCharge && s != null -> Modal(border = C.ok) {
+            Text("Předehřev hotový – nasyp zrno do bubnu", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("Buben je prohřátý na ${fmt0(preheat?.target)} °C po dobu ${(preheat?.holdS ?: 0) / 60} min. Vsyp zrno a potvrď vsypání – značka se zapíše do grafu.", color = C.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PrimaryButton("Vsypáno", { vm.roastMark("charge") }, Modifier.weight(1f), container = C.bt, height = 60.dp)
+                SecondaryButton("Zavřít", { dismissedManualCharge = true }, height = 60.dp)
+            }
+        }
+        dropReady && s != null -> Modal(border = C.ok) {
             Text("Připraveno k vysypání", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             Text("Splněna podmínka receptury (teplota nebo čas ${mmss(s.roast?.t)}). Vysyp zrno a potvrď – hořák se vypne a začne chlazení.", color = C.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -280,6 +331,9 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit) {
             }
         }
     }
+    val attn = selftest == null && link !is LinkState.Replaced && !linkLost &&
+        (chargeReady || dropReady || (manualDone && !dismissedManualCharge))
+    SideEffect { onAttention(attn) }
 }
 
 @Composable
@@ -290,12 +344,14 @@ fun Modal(
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Box(
-        Modifier.fillMaxSize().background(Color(0xA0050709)).clickable(enabled = true, onClick = {}),
+        Modifier.fillMaxSize().background(C.scrim).clickable(enabled = true, onClick = {}),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             Modifier
-                .width(width)
+                .widthIn(max = width)
+                .fillMaxWidth(0.94f)
+                .verticalScroll(rememberScrollState())
                 .clip(RoundedCornerShape(16.dp))
                 .background(bg)
                 .border(2.dp, border, RoundedCornerShape(16.dp))

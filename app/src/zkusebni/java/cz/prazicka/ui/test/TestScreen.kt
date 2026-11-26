@@ -75,7 +75,7 @@ fun TestScreen(vm: AppViewModel) {
             when {
                 builtIn -> Chip("Vestavěný simulátor – vše povoleno", C.okText, C.okBg)
                 conn != null && conn.hello.simEnabled -> Chip("Portenta se simulací – povoleno", C.okText, C.okBg)
-                conn != null -> Chip("Portenta BEZ simulace – nástroje ovlivňující pražičku vypnuty", C.dangerText, Color(0xFF3A1A1C))
+                conn != null -> Chip("Portenta BEZ simulace – nástroje ovlivňující pražičku vypnuty", C.dangerText, C.dangerBg)
                 else -> Chip("Nepřipojeno", C.muted, C.surface2)
             }
             Spacer1()
@@ -189,7 +189,7 @@ fun TestScreen(vm: AppViewModel) {
                             fontFamily = Mono, fontSize = 11.sp, maxLines = 2,
                             color = when {
                                 l.text.startsWith("(potlačeno)") -> C.faint
-                                l.out -> Color(0xFF8CCBFF)
+                                l.out -> C.airText
                                 l.text.contains("\"ok\":false") || l.text.contains("\"level\":\"error\"") -> C.dangerText
                                 l.text.contains("\"level\":\"warn\"") -> C.warnText
                                 l.type == "ack" || l.type == "hello_ack" -> C.okText

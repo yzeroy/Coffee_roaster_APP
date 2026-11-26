@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -50,7 +51,7 @@ fun DiagScreen(vm: AppViewModel) {
     LaunchedEffect(link is LinkState.Connected) { if (link is LinkState.Connected) vm.refreshDiag() }
 
     Row(Modifier.fillMaxSize().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Column(Modifier.width(420.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(0.42f).widthIn(max = 440.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(Modifier.fillMaxWidth()) {
                 Row {
                     SectionTitle("Spojení")
@@ -100,7 +101,7 @@ fun DiagScreen(vm: AppViewModel) {
             Row {
                 SectionTitle("Události z Portenty")
                 Spacer1()
-                Segmented(listOf("all" to "Vše", "warn" to "Varování+", "error" to "Chyby"), level, { level = it }, Modifier.width(320.dp), height = 34.dp)
+                Segmented(listOf("all" to "Vše", "warn" to "Varování+", "error" to "Chyby"), level, { level = it }, Modifier.widthIn(max = 320.dp).weight(1f, fill = false), height = 34.dp)
                 SecondaryButton("Export", {
                     shareFile(context, "udalosti.txt", "text/plain", events.joinToString("\n") { "${it.seq ?: ""}\t${it.ms}\t${it.level}\t${it.code}\t${it.msg}" })
                 }, height = 38.dp)

@@ -5,6 +5,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -55,70 +60,102 @@ fun RoastScreen(vm: AppViewModel, go: (Screen) -> Unit) {
     val link by vm.link.collectAsState()
     val record by vm.currentRecord.collectAsState()
     val live by vm.live.collectAsState()
+    val liveMarks by vm.liveMarks.collectAsState()
+    val preheat by vm.manualPreheat.collectAsState()
     val portentaRecipeJson by vm.portentaRecipe.collectAsState()
     val settings by vm.settings.collectAsState()
     val connected = link is LinkState.Connected
     val s = if (connected) status else null
     val portentaRecipe = remember(portentaRecipeJson) { portentaRecipeJson?.let { Recipe.fromJson(it) } }
     var showStart by remember { mutableStateOf(false) }
+    var confirmReset by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Header(vm, s, link, record != null)
+    // Rozvržení podle velikosti obrazovky: nic s pevnou šířkou, panely jen s mezemi.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxWidth < 900.dp
+        val low = maxHeight < 620.dp
+        val gap = if (compact || low) 8.dp else 12.dp
+        val valuesW = (maxWidth * 0.22f).coerceIn(190.dp, 290.dp)
+        val bottomH = (maxHeight * 0.3f).coerceIn(176.dp, 236.dp)
+        Column(Modifier.fillMaxSize().padding(if (compact) 10.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+            Header(vm, s, link, record != null, preheat, compact)
 
-        Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // graf
-            Panel(Modifier.weight(1f).fillMaxHeight()) {
-                val samples = record?.samples ?: live
-                val roast = s?.roast
-                val chargeT = record?.chargeT ?: run {
-                    val t = roast?.t
-                    val last = samples.lastOrNull()?.t
-                    if (roast != null && t != null && last != null && (roast.phase == "roast" || roast.phase == "cooling")) last - t else null
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                // graf
+                Panel(Modifier.weight(1f).fillMaxHeight()) {
+                    val samples = record?.samples ?: live
+                    val roast = s?.roast
+                    val marks = record?.marks ?: liveMarks
+                    val chargeT = record?.chargeT ?: run {
+                        val t = roast?.t
+                        val last = samples.lastOrNull()?.t
+                        if (roast != null && t != null && last != null && (roast.phase == "roast" || roast.phase == "cooling")) last - t
+                        else liveMarks.lastOrNull { it.event == "charge" }?.t
+                    }
+                    val recipeOn = roast != null && (roast.phase == "roast" || roast.phase == "cooling") && portentaRecipe != null
+                    val manualRoast = s != null && s.state.heating && roast?.running != true
+                    val manualPreheat = preheat?.takeIf { manualRoast && it.phase != cz.prazicka.data.ManualPreheat.Phase.DONE }
+                    Legend(roast?.phase == "preheat" || manualPreheat != null, recipeOn, settings.hiddenCurves, compact, onReset = if (manualRoast) ({ confirmReset = true }) else null)
+                    RoastGraph(
+                        samples = samples,
+                        marks = marks,
+                        chargeT = chargeT,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        recipeCurve = if (recipeOn) { t -> portentaRecipe!!.curveAt(t) } else null,
+                        recipeEndT = portentaRecipe?.curve?.lastOrNull()?.t?.toDouble(),
+                        bandTarget = if (roast?.phase == "preheat") portentaRecipe?.chargeBt else manualPreheat?.target,
+                        hidden = settings.hiddenCurves,
+                    )
                 }
-                val recipeOn = roast != null && (roast.phase == "roast" || roast.phase == "cooling") && portentaRecipe != null
-                Legend(roast?.phase == "preheat", recipeOn)
-                RoastGraph(
-                    samples = samples,
-                    marks = record?.marks ?: emptyList(),
-                    chargeT = chargeT,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    recipeCurve = if (recipeOn) { t -> portentaRecipe!!.curveAt(t) } else null,
-                    recipeEndT = portentaRecipe?.curve?.lastOrNull()?.t?.toDouble(),
-                    bandTarget = if (roast?.phase == "preheat") portentaRecipe?.chargeBt else null,
-                    hidden = settings.hiddenCurves,
-                )
+                ValuesPanel(vm, s, Modifier.width(valuesW).fillMaxHeight())
             }
-            ValuesPanel(vm, s, Modifier.width(270.dp).fillMaxHeight())
-        }
 
-        Row(Modifier.height(222.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FlameCard(vm, s, settings.lastManualSp, Modifier.width(330.dp).fillMaxHeight())
-            VfdCard(vm, s, Modifier.width(330.dp).fillMaxHeight())
-            EventsCard(vm, s, connected, record?.marks?.map { it.event } ?: emptyList(), portentaRecipe, onManualStart = { showStart = true }, go = go, modifier = Modifier.weight(1f).fillMaxHeight())
+            Row(Modifier.height(bottomH).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                FlameCard(vm, s, settings.lastManualSp, Modifier.weight(1f).widthIn(max = 380.dp).fillMaxHeight())
+                VfdCard(vm, s, Modifier.weight(1f).widthIn(max = 380.dp).fillMaxHeight())
+                EventsCard(vm, s, connected, (record?.marks ?: liveMarks).map { it.event }, portentaRecipe, onManualStart = { showStart = true }, go = go, modifier = Modifier.weight(1.3f).fillMaxHeight())
+            }
         }
     }
 
-    if (showStart) StartManualDialog(settings.lastManualSp, settings.recordManual, vm.client.hello?.has("pid") != false, onStart = { sp, rec ->
+    if (showStart) StartManualDialog(settings.lastManualSp, settings.lastManualPreheatMin, settings.recordManual, vm.client.hello?.has("pid") != false, onStart = { sp, rec, pre ->
         showStart = false
-        vm.manualStart(sp, rec)
+        vm.manualStart(sp, rec, pre)
     }, onCancel = { showStart = false })
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            containerColor = C.surface,
+            title = { Text("Resetovat graf?") },
+            text = {
+                Text(
+                    "Dosavadní průběh se z grafu smaže a čas začne znovu od nuly." +
+                        (if (record != null) " Z běžícího záznamu se odstraní i část před resetem, záznam pokračuje dál." else "") +
+                        " Na pražičku to nemá žádný vliv.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { confirmReset = false; vm.resetGraph() }) { Text("Resetovat", color = C.bt, fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Zrušit", color = C.muted) } },
+        )
+    }
 }
 
 @Composable
-private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boolean) {
+private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boolean, preheat: cz.prazicka.data.ManualPreheat.Ui?, compact: Boolean) {
     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         val (label, bg, fg) = when {
             s == null -> Triple("Nepřipojeno", C.surface2, C.muted)
             s.state == RoasterState.HALTED -> Triple("Chyba", C.stop, Color.White)
-            s.roast?.phase == "preheat" -> Triple("Předehřev", Color(0xFF3A2A1A), C.btSoft)
-            s.roast?.phase == "cooling" -> Triple("Chlazení", Color(0xFF16263A), C.air)
+            s.roast?.phase == "preheat" -> Triple("Předehřev", C.heatBg, C.btSoft)
+            s.roast?.phase == "cooling" -> Triple("Chlazení", C.coolBg, C.air)
             s.state == RoasterState.RUNNING -> Triple("Pražení", C.bt, C.bg)
-            s.state.heating -> Triple(s.state.label, Color(0xFF3A2A1A), C.btSoft)
+            s.state.heating -> Triple(s.state.label, C.heatBg, C.btSoft)
             s.state == RoasterState.READY -> Triple("Připraveno", C.okBg, C.okText)
             else -> Triple(s.state.label, C.surface2, C.muted)
         }
         Chip(label.uppercase(), fg, bg)
-        Column {
+        Column(Modifier.weight(1f)) {
             val roast = s?.roast
             Text(
                 when {
@@ -128,29 +165,43 @@ private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boo
                     roast?.phase == "loaded" -> "Nahraná receptura: ${roast?.recipe ?: ""}"
                     else -> "Pražička"
                 },
-                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
+            val manualPre = preheat?.takeIf { s != null && s.state.heating && roast?.running != true }
             Text(
                 when {
                     s == null -> "Aplikace funguje i bez spojení – receptury, záznamy a nastavení"
+                    roast?.phase == "preheat" && roast.preheatLeftS == null && !roast.chargeReady -> "Předehřev – ohřev na ${fmt0(s.ctrl.sp)} °C"
+                    roast?.phase == "preheat" && !roast.chargeReady -> "Předehřev – výdrž na teplotě"
+                    manualPre?.phase == cz.prazicka.data.ManualPreheat.Phase.HEATING -> "Předehřev – ohřev na ${fmt0(manualPre.target)} °C"
+                    manualPre?.phase == cz.prazicka.data.ManualPreheat.Phase.HOLD -> "Předehřev – výdrž na ${fmt0(manualPre.target)} °C"
+                    manualPre?.phase == cz.prazicka.data.ManualPreheat.Phase.DONE -> "Předehřev hotový – vsyp zrno"
                     roast != null && roast.running -> "Receptura · ${Texts.phase(roast.phase)} · ${Texts.mode(s.ctrl.mode)}"
                     s.state.heating && s.ctrl.mode == "pid" -> "Teplotu drží PID"
                     s.state.heating && s.ctrl.mode == "manual" -> "Plyn řízen ručně"
                     s.heatBlocked -> "Ohřev je po restartu zablokovaný"
                     else -> s.state.label
                 },
-                fontSize = 12.sp, color = C.muted, maxLines = 1,
+                fontSize = 12.sp, color = C.muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         val t = s?.roast?.t
-        Text(if (t != null) mmss(t) else "—", fontFamily = Mono, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
-        Spacer1()
+        val preLeft = s?.roast?.preheatLeftS?.takeIf { s.roast?.phase == "preheat" }
+            ?: preheat?.takeIf { s != null && s.state.heating && it.phase == cz.prazicka.data.ManualPreheat.Phase.HOLD }?.leftS
+        if (preLeft != null) {
+            Column(horizontalAlignment = Alignment.End) {
+                Text("zbývá", color = C.btSoft, fontSize = 11.sp)
+                Text(mmss(preLeft), fontFamily = Mono, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = C.btSoft)
+            }
+        } else {
+            Text(if (t != null) mmss(t) else "—", fontFamily = Mono, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
+        }
         if (s != null && s.state.heating && s.roast?.running != true) {
-            if (recording) Chip("● Záznam", Color(0xFFFFB3B3), border = Color(0xFFFF8080))
+            if (recording) Chip("● Záznam", C.recFg, border = C.recBorder)
             else Box(Modifier.clickable { vm.startRecordingNow() }) { Chip("Bez záznamu · zapnout", C.muted, border = C.line) }
         }
         val (lt, lc) = when (link) {
-            is LinkState.Connected -> (if (link.simulator) "Simulátor" else "Spojeno · ${link.target}") to C.ok
+            is LinkState.Connected -> (if (link.simulator) "Simulátor" else if (compact) "Spojeno" else "Spojeno · ${link.target}") to C.ok
             is LinkState.Connecting -> "Připojuji…" to C.warn
             is LinkState.Failed -> "Bez spojení" to C.danger
             LinkState.Replaced -> "Převzato" to C.warn
@@ -161,35 +212,36 @@ private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boo
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) { Dot(lc); Text(lt, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) }
         if (s != null) {
-            Chip(if (s.stop) "STOP OK" else "STOP!", if (s.stop) C.okText else C.dangerText, if (s.stop) C.okBg else Color(0xFF3A1A1C))
-            Chip(if (s.psu) "PSU OK" else "PSU!", if (s.psu) C.okText else C.dangerText, if (s.psu) C.okBg else Color(0xFF3A1A1C))
+            Chip(if (s.stop) "STOP OK" else "STOP!", if (s.stop) C.okText else C.dangerText, if (s.stop) C.okBg else C.dangerBg)
+            Chip(if (s.psu) "PSU OK" else "PSU!", if (s.psu) C.okText else C.dangerText, if (s.psu) C.okBg else C.dangerBg)
             val (ft, ffg, fbg) = when (s.burner.flame) {
-                1 -> Triple("PLAMEN OK", C.okText, C.okBg)
-                2 -> Triple("PLAMEN NOK", C.dangerText, Color(0xFF3A1A1C))
+                1 -> Triple(if (compact) "PLAMEN" else "PLAMEN OK", C.okText, C.okBg)
+                2 -> Triple("PLAMEN NOK", C.dangerText, C.dangerBg)
                 else -> Triple("PLAMEN VYP", C.muted, C.surface2)
             }
             Chip(ft, ffg, fbg)
-            if (s.sim != null) Chip("SIMULACE", C.warn, border = C.warn)
+            if (s.sim != null) Chip(if (compact) "SIM" else "SIMULACE", C.warn, border = C.warn)
         }
     }
     if (link is LinkState.Failed && !link.retrying) {
-        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(0xFF3A1A1C)).padding(10.dp)) {
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.dangerBg).padding(10.dp)) {
             Text(link.reason, color = C.dangerText, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-private fun Legend(preheat: Boolean, recipe: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun Legend(preheat: Boolean, recipe: Boolean, hidden: Set<String>, compact: Boolean, onReset: (() -> Unit)?) {
+    Row(Modifier.fillMaxWidth().height(32.dp), horizontalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp), verticalAlignment = Alignment.CenterVertically) {
         LegendItem(C.bt, "Zrno")
-        LegendItem(C.sp, if (preheat) "Cíl předehřevu" else if (recipe) "Křivka receptury" else "Cíl")
-        LegendItem(C.air, "Vzduch")
-        LegendItem(C.exh, "Odtah")
-        LegendItem(C.ror, "RoR (°C/min)")
-        LegendItem(C.gasFill, "Plyn", 10.dp)
+        if (Curves.SP !in hidden) LegendItem(C.sp, if (preheat) "Cíl předehřevu" else if (recipe) "Křivka receptury" else "Cíl")
+        if (Curves.AIR !in hidden) LegendItem(C.air, "Okolí")
+        if (Curves.EXH !in hidden) LegendItem(C.exh, "Odtah")
+        if (Curves.ROR !in hidden) LegendItem(C.ror, "RoR")
+        if (Curves.GAS !in hidden) LegendItem(C.gasFill, "Plyn", 10.dp)
         Spacer1()
-        Text("čas v minutách", color = C.muted, fontSize = 12.sp)
+        if (!compact) Text("min", color = C.muted, fontSize = 12.sp)
+        if (onReset != null) SecondaryButton("↺ Reset grafu", onReset, height = 32.dp)
     }
 }
 
@@ -197,16 +249,16 @@ private fun Legend(preheat: Boolean, recipe: Boolean) {
 private fun LegendItem(color: Color, label: String, h: Dp = 3.dp) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.width(16.dp).height(h).background(color))
-        Text(label, color = C.muted, fontSize = 12.sp)
+        Text(label, color = C.muted, fontSize = 12.sp, maxLines = 1)
     }
 }
 
 @Composable
 private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
-    Panel(modifier) {
+    Panel(modifier.verticalScroll(rememberScrollState())) {
         Label("ZRNO")
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(fmt1(s?.temps?.bt), fontFamily = Mono, fontSize = 52.sp, fontWeight = FontWeight.SemiBold, color = C.bt)
+            Text(fmt1(s?.temps?.bt), fontFamily = Mono, fontSize = 46.sp, fontWeight = FontWeight.SemiBold, color = C.bt, maxLines = 1)
             Text("°C", color = C.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 10.dp))
         }
         Row(
@@ -223,8 +275,8 @@ private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
             ValueBox("Plyn", if (s?.burner?.power == true) fmt0(s?.burner?.gas) + " %" else "—", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ValueBox("Vzduch", fmt1(s?.temps?.air), Modifier.weight(1f), color = Color(0xFF8CCBFF))
-            ValueBox("Odtah", fmt1(s?.temps?.exh), Modifier.weight(1f), color = Color(0xFFD6BEFF))
+            ValueBox("Okolí", fmt1(s?.temps?.air), Modifier.weight(1f), color = C.airText)
+            ValueBox("Odtah", fmt1(s?.temps?.exh), Modifier.weight(1f), color = C.exhText)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -234,9 +286,8 @@ private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
                 color = when (s?.burner?.flame) { 1 -> C.okText; 2 -> C.dangerText; else -> C.muted },
                 fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
             )
-            Spacer1()
-            SecondaryButton("Znovu zapálit", { vm.reignite() }, enabled = s?.state == RoasterState.RUNNING, height = 38.dp)
         }
+        SecondaryButton("Znovu zapálit", { vm.reignite() }, Modifier.fillMaxWidth(), enabled = s?.state == RoasterState.RUNNING, height = 40.dp)
         s?.roast?.let { r ->
             if (r.running) KeyValue("Fáze", Texts.phase(r.phase))
         }
@@ -253,14 +304,14 @@ private fun FlameCard(vm: AppViewModel, s: Status?, lastSp: Double, modifier: Mo
     val shownSp = pendingSp ?: s?.ctrl?.sp ?: lastSp
     if (pendingSp != null && s?.ctrl?.sp == pendingSp) pendingSp = null
 
-    Panel(modifier, border = if (manualGas) C.warn else C.line, padding = 12.dp) {
+    Panel(modifier.verticalScroll(rememberScrollState()), border = if (manualGas) C.warn else C.line, padding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionTitle("Plamen")
             Spacer1()
             val (ml, mbg, mfg) = when {
                 !running -> Triple("Nehoří", C.surface2, C.muted)
-                mode == "pid" -> Triple("Teplota (PID)", Color(0xFF3A2A1A), C.btSoft)
-                mode == "recipe" -> Triple("Receptura", Color(0xFF3A2A1A), C.btSoft)
+                mode == "pid" -> Triple("Teplota (PID)", C.heatBg, C.btSoft)
+                mode == "recipe" -> Triple("Receptura", C.heatBg, C.btSoft)
                 else -> Triple("Ručně", C.warnBg, C.warnText)
             }
             Chip(ml, mfg, mbg)
@@ -297,7 +348,6 @@ private fun FlameCard(vm: AppViewModel, s: Status?, lastSp: Double, modifier: Mo
                     vm.spSet(v)
                 }
                 StepBtn("−5", canSet && running) { change(-5.0) }
-                StepBtn("−1", canSet && running) { change(-1.0) }
                 Box(
                     Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(10.dp)).background(C.bg)
                         .border(1.dp, if (canSet && running) C.bt else C.line, RoundedCornerShape(10.dp)),
@@ -306,7 +356,6 @@ private fun FlameCard(vm: AppViewModel, s: Status?, lastSp: Double, modifier: Mo
                     val v = if (recipeRunning || mode == "recipe") s?.ctrl?.sp else shownSp
                     Text("${fmt0(v)} °C", fontFamily = Mono, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = if (canSet && running) C.bt else C.muted)
                 }
-                StepBtn("+1", canSet && running) { change(1.0) }
                 StepBtn("+5", canSet && running) { change(5.0) }
             }
         }
@@ -543,9 +592,10 @@ private fun MarkButton(label: String, sub: String, done: Boolean, hot: Boolean, 
 }
 
 @Composable
-private fun StartManualDialog(lastSp: Double, recordDefault: Boolean, pidAvailable: Boolean, onStart: (Double, Boolean) -> Unit, onCancel: () -> Unit) {
+private fun StartManualDialog(lastSp: Double, lastPreheatMin: Int, recordDefault: Boolean, pidAvailable: Boolean, onStart: (Double, Boolean, Int) -> Unit, onCancel: () -> Unit) {
     var sp by remember { mutableDoubleStateOf(lastSp.coerceIn(50.0, 260.0)) }
     var rec by remember { mutableStateOf(recordDefault) }
+    var pre by remember { mutableIntStateOf(lastPreheatMin.coerceIn(0, 60)) }
     Modal(border = C.bt, width = 580.dp) {
         Text("Ruční pražení", fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Text(
@@ -563,12 +613,23 @@ private fun StartManualDialog(lastSp: Double, recordDefault: Boolean, pidAvailab
                 ) { Text("${fmt0(sp)} °C", fontFamily = Mono, fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = C.bt) }
                 listOf(1.0, 5.0).forEach { d -> BigStep(if (d == 5.0) "+5" else "+1") { sp = (sp + d).coerceIn(50.0, 260.0) } }
             }
+            Label("Předehřev – výdrž na cílové teplotě (prohřátí bubnu)", size = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                BigStep("−1") { pre = (pre - 1).coerceIn(0, 60) }
+                Box(
+                    Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(12.dp)).background(C.bg).border(1.dp, C.line, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) { Text(if (pre == 0) "bez předehřevu" else "$pre min", fontFamily = Mono, fontSize = if (pre == 0) 20.sp else 30.sp, fontWeight = FontWeight.SemiBold) }
+                BigStep("+1") { pre = (pre + 1).coerceIn(0, 60) }
+                BigStep("+5") { pre = (pre + 5).coerceIn(0, 60) }
+            }
+            Label(if (pre > 0) "Z pokojové teploty na ${fmt0(sp)} °C, pak $pre min výdrž. Teprve potom se objeví výzva ke vsypání." else "Výzva ke vsypání se neobjeví – vsypání zadáš tlačítkem.")
         }
         Label("Zaznamenat toto pražení?", size = 13.sp)
         Segmented(listOf("yes" to "Ano, zaznamenat", "no" to "Ne"), if (rec) "yes" else "no", { rec = it == "yes" }, Modifier.fillMaxWidth(), height = 50.dp)
         Label("Výchozí odpověď nastavíš v Nastavení. Záznam jde zapnout i později během pražení.")
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryButton("Spustit", { onStart(sp, rec) }, Modifier.weight(1f), container = C.bt, height = 58.dp)
+            PrimaryButton(if (pre > 0) "Spustit předehřev" else "Spustit", { onStart(sp, rec, if (pidAvailable) pre else 0) }, Modifier.weight(1f), container = C.bt, height = 58.dp)
             SecondaryButton("Zrušit", onCancel, height = 58.dp)
         }
         Label("Buben a odtah se rozjedou na výchozí rychlost, pokud stojí. Pak kontrola a zapálení.")

@@ -3,7 +3,9 @@ package cz.prazicka
 import android.app.Application
 import cz.prazicka.data.RecipeRepository
 import cz.prazicka.data.RecordRepository
+import cz.prazicka.data.ManualPreheat
 import cz.prazicka.data.Recorder
+import cz.prazicka.data.Selftest
 import cz.prazicka.data.SettingsStore
 import cz.prazicka.net.LinkState
 import cz.prazicka.net.PortentaClient
@@ -28,14 +30,29 @@ class AppContainer(app: Application) {
         onFinished = { r -> scope.launch { records.save(r) } },
         onCheckpoint = { r -> scope.launch { records.save(r) } },
     )
+    val preheat = ManualPreheat { mark -> recorder.addLocalMark(mark) }
+    val selftest = Selftest()
 
     init {
         scope.launch { recipes.load() }
         scope.launch { records.load() }
-        scope.launch { client.status.collect { s -> if (s != null) recorder.onStatus(s) } }
+        scope.launch {
+            client.status.collect { s ->
+                if (s != null) {
+                    recorder.onStatus(s)
+                    preheat.onStatus(s)
+                    selftest.onStatus(s)
+                }
+            }
+        }
         scope.launch { client.events.collect { e -> recorder.onEvent(e) } }
         scope.launch {
-            client.link.collect { l -> if (l is LinkState.Connected) recorder.fw = l.hello.fw ?: "" }
+            client.link.collect { l ->
+                if (l is LinkState.Connected) {
+                    recorder.fw = l.hello.fw ?: ""
+                    selftest.onConnected(l.hello.bootId)
+                }
+            }
         }
         scope.launch { settings.settings.collect { recorder.defaultManual = it.recordManual } }
         connect()

@@ -27,6 +27,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,58 +56,215 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Barvy podle náhledu UI (tmavý motiv). */
+/** Sada barev jednoho motivu. */
+class Palette(
+    val bg: Color,
+    val surface: Color,
+    val surface2: Color,
+    val surface3: Color,
+    val line: Color,
+    val text: Color,
+    val muted: Color,
+    val faint: Color,
+    val disabled: Color,
+    val bt: Color,
+    val btSoft: Color,
+    val sp: Color,
+    val air: Color,
+    val exh: Color,
+    val ror: Color,
+    val gas: Color,
+    val gasFill: Color,
+    val ok: Color,
+    val okText: Color,
+    val okBg: Color,
+    val warn: Color,
+    val warnText: Color,
+    val warnBg: Color,
+    val danger: Color,
+    val dangerText: Color,
+    val dangerBg: Color,
+    val stop: Color,
+    val purple: Color,
+    val purpleText: Color,
+    val purpleBg: Color,
+    val heatBg: Color,
+    val coolBg: Color,
+    val airText: Color,
+    val exhText: Color,
+    val recFg: Color,
+    val recBorder: Color,
+    val linkText: Color,
+    val modalDangerBg: Color,
+    val scrim: Color,
+    val okPanelBg: Color,
+    val testActiveBg: Color,
+)
+
+val DarkPalette = Palette(
+    bg = Color(0xFF0F1215),
+    surface = Color(0xFF171B20),
+    surface2 = Color(0xFF1F252C),
+    surface3 = Color(0xFF262D35),
+    line = Color(0xFF2B333C),
+    text = Color(0xFFE9EDF1),
+    muted = Color(0xFFA3ADB8),
+    faint = Color(0xFF7D8894),
+    disabled = Color(0xFF5F6A75),
+    bt = Color(0xFFFF8A3D),
+    btSoft = Color(0xFFFFB27A),
+    sp = Color(0xFFC9D1D9),
+    air = Color(0xFF57B4FF),
+    exh = Color(0xFFC39BFF),
+    ror = Color(0xFFF2D14B),
+    gas = Color(0xFF8A96A3),
+    gasFill = Color(0xFF3A434D),
+    ok = Color(0xFF46C98B),
+    okText = Color(0xFF7FE0B0),
+    okBg = Color(0xFF1B2A22),
+    warn = Color(0xFFF2B84B),
+    warnText = Color(0xFFF7D58E),
+    warnBg = Color(0xFF2E2614),
+    danger = Color(0xFFFF5A5A),
+    dangerText = Color(0xFFFF9C9C),
+    dangerBg = Color(0xFF3A1A1C),
+    stop = Color(0xFFC9302C),
+    purple = Color(0xFFB48CFF),
+    purpleText = Color(0xFFCDB8FF),
+    purpleBg = Color(0xFF2A2540),
+    heatBg = Color(0xFF3A2A1A),
+    coolBg = Color(0xFF16263A),
+    airText = Color(0xFF8CCBFF),
+    exhText = Color(0xFFD6BEFF),
+    recFg = Color(0xFFFFB3B3),
+    recBorder = Color(0xFFFF8080),
+    linkText = Color(0xFFE0B4B4),
+    modalDangerBg = Color(0xFF1C1416),
+    scrim = Color(0xA0050709),
+    okPanelBg = Color(0xFF15211B),
+    testActiveBg = Color(0xFF3A2E12),
+)
+
+val LightPalette = Palette(
+    bg = Color(0xFFEEF1F4),
+    surface = Color(0xFFFFFFFF),
+    surface2 = Color(0xFFF3F5F7),
+    surface3 = Color(0xFFE3E7EC),
+    line = Color(0xFFD0D7DF),
+    text = Color(0xFF141A20),
+    muted = Color(0xFF55606B),
+    faint = Color(0xFF6C7782),
+    disabled = Color(0xFFA3ACB5),
+    bt = Color(0xFFE0661A),
+    btSoft = Color(0xFFB4500F),
+    sp = Color(0xFF4A5561),
+    air = Color(0xFF1A73C8),
+    exh = Color(0xFF7A47D1),
+    ror = Color(0xFFA67F00),
+    gas = Color(0xFF6B7681),
+    gasFill = Color(0xFFCBD2DA),
+    ok = Color(0xFF1E9E63),
+    okText = Color(0xFF137347),
+    okBg = Color(0xFFDDF3E8),
+    warn = Color(0xFFC98A12),
+    warnText = Color(0xFF7D5400),
+    warnBg = Color(0xFFFBF0D6),
+    danger = Color(0xFFD63030),
+    dangerText = Color(0xFFB01E1E),
+    dangerBg = Color(0xFFFBE3E3),
+    stop = Color(0xFFC9302C),
+    purple = Color(0xFF7A47D1),
+    purpleText = Color(0xFF5B33A8),
+    purpleBg = Color(0xFFEEE6FB),
+    heatBg = Color(0xFFFDEBDD),
+    coolBg = Color(0xFFDFEDFB),
+    airText = Color(0xFF1A6BB8),
+    exhText = Color(0xFF6A3CC0),
+    recFg = Color(0xFFB01E1E),
+    recBorder = Color(0xFFD63030),
+    linkText = Color(0xFF7A2E2E),
+    modalDangerBg = Color(0xFFFFF5F5),
+    scrim = Color(0x80202830),
+    okPanelBg = Color(0xFFE3F5EC),
+    testActiveBg = Color(0xFFFBF0D6),
+)
+
+/**
+ * Barvy aktuálního motivu. Hodnota je stav Compose, takže změna motivu překreslí vše, co barvy čte.
+ */
 object C {
-    val bg = Color(0xFF0F1215)
-    val surface = Color(0xFF171B20)
-    val surface2 = Color(0xFF1F252C)
-    val surface3 = Color(0xFF262D35)
-    val line = Color(0xFF2B333C)
-    val text = Color(0xFFE9EDF1)
-    val muted = Color(0xFFA3ADB8)
-    val faint = Color(0xFF7D8894)
-    val disabled = Color(0xFF5F6A75)
-    val bt = Color(0xFFFF8A3D)
-    val btSoft = Color(0xFFFFB27A)
-    val sp = Color(0xFFC9D1D9)
-    val air = Color(0xFF57B4FF)
-    val exh = Color(0xFFC39BFF)
-    val ror = Color(0xFFF2D14B)
-    val gas = Color(0xFF8A96A3)
-    val gasFill = Color(0xFF3A434D)
-    val ok = Color(0xFF46C98B)
-    val okText = Color(0xFF7FE0B0)
-    val okBg = Color(0xFF1B2A22)
-    val warn = Color(0xFFF2B84B)
-    val warnText = Color(0xFFF7D58E)
-    val warnBg = Color(0xFF2E2614)
-    val danger = Color(0xFFFF5A5A)
-    val dangerText = Color(0xFFFF9C9C)
-    val stop = Color(0xFFC9302C)
-    val purple = Color(0xFFB48CFF)
-    val purpleText = Color(0xFFCDB8FF)
+    var p: Palette by mutableStateOf(DarkPalette)
+    val bg: Color get() = p.bg
+    val surface: Color get() = p.surface
+    val surface2: Color get() = p.surface2
+    val surface3: Color get() = p.surface3
+    val line: Color get() = p.line
+    val text: Color get() = p.text
+    val muted: Color get() = p.muted
+    val faint: Color get() = p.faint
+    val disabled: Color get() = p.disabled
+    val bt: Color get() = p.bt
+    val btSoft: Color get() = p.btSoft
+    val sp: Color get() = p.sp
+    val air: Color get() = p.air
+    val exh: Color get() = p.exh
+    val ror: Color get() = p.ror
+    val gas: Color get() = p.gas
+    val gasFill: Color get() = p.gasFill
+    val ok: Color get() = p.ok
+    val okText: Color get() = p.okText
+    val okBg: Color get() = p.okBg
+    val warn: Color get() = p.warn
+    val warnText: Color get() = p.warnText
+    val warnBg: Color get() = p.warnBg
+    val danger: Color get() = p.danger
+    val dangerText: Color get() = p.dangerText
+    val dangerBg: Color get() = p.dangerBg
+    val stop: Color get() = p.stop
+    val purple: Color get() = p.purple
+    val purpleText: Color get() = p.purpleText
+    val purpleBg: Color get() = p.purpleBg
+    val heatBg: Color get() = p.heatBg
+    val coolBg: Color get() = p.coolBg
+    val airText: Color get() = p.airText
+    val exhText: Color get() = p.exhText
+    val recFg: Color get() = p.recFg
+    val recBorder: Color get() = p.recBorder
+    val linkText: Color get() = p.linkText
+    val modalDangerBg: Color get() = p.modalDangerBg
+    val scrim: Color get() = p.scrim
+    val okPanelBg: Color get() = p.okPanelBg
+    val testActiveBg: Color get() = p.testActiveBg
 }
 
 val Mono = FontFamily.Monospace
 
+/** Motiv: "dark", "light", "system". Měřítko rozhraní 0.9–1.2. */
 @Composable
-fun PrazickaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = C.text,
-            onPrimary = C.bg,
-            secondary = C.bt,
-            background = C.bg,
-            onBackground = C.text,
-            surface = C.surface,
-            onSurface = C.text,
-            surfaceVariant = C.surface2,
-            onSurfaceVariant = C.muted,
-            outline = C.line,
-            error = C.danger,
-        ),
-        content = content,
-    )
+fun PrazickaTheme(theme: String = "dark", scale: Float = 1f, content: @Composable () -> Unit) {
+    val dark = when (theme) { "light" -> false; "system" -> isSystemInDarkTheme(); else -> true }
+    val palette = if (dark) DarkPalette else LightPalette
+    SideEffect { if (C.p !== palette) C.p = palette }
+    val base = if (dark) darkColorScheme() else lightColorScheme()
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density * scale, density.fontScale)) {
+        MaterialTheme(
+            colorScheme = base.copy(
+                primary = palette.text,
+                onPrimary = palette.bg,
+                secondary = palette.bt,
+                background = palette.bg,
+                onBackground = palette.text,
+                surface = palette.surface,
+                onSurface = palette.text,
+                surfaceVariant = palette.surface2,
+                onSurfaceVariant = palette.muted,
+                outline = palette.line,
+                error = palette.danger,
+            ),
+            content = content,
+        )
+    }
 }
 
 @Composable

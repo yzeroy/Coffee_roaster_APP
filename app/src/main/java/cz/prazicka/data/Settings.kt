@@ -24,9 +24,15 @@ data class AppSettings(
     val recordManual: Boolean = true,
     val checkUpdatesOnStart: Boolean = true,
     val lastUpdateCheck: Long = 0L,
-    val hiddenCurves: Set<String> = emptySet(),
+    val hiddenCurves: Set<String> = setOf("air"),
     val lastFoundAt: Long = 0L,
     val lastManualSp: Double = 200.0,
+    /** Výdrž předehřevu u ručního pražení (min), 0 = bez předehřevu. */
+    val lastManualPreheatMin: Int = 5,
+    /** "dark", "light", "system". */
+    val theme: String = "dark",
+    /** Velikost rozhraní v procentech (90–120). */
+    val uiScale: Int = 100,
 )
 
 /** Nastavení aplikace. Token se ukládá zvlášť, šifrovaný klíčem v Android Keystore. */
@@ -46,9 +52,12 @@ class SettingsStore(context: Context) {
         recordManual = prefs.getBoolean("record_manual", true),
         checkUpdatesOnStart = prefs.getBoolean("check_updates", true),
         lastUpdateCheck = prefs.getLong("last_update_check", 0L),
-        hiddenCurves = prefs.getStringSet("hidden_curves", emptySet()) ?: emptySet(),
+        hiddenCurves = prefs.getStringSet("hidden_curves", setOf("air")) ?: setOf("air"),
         lastFoundAt = prefs.getLong("last_found_at", 0L),
         lastManualSp = prefs.getFloat("last_manual_sp", 200f).toDouble(),
+        lastManualPreheatMin = prefs.getInt("last_manual_preheat_min", 5),
+        theme = prefs.getString("theme", "dark") ?: "dark",
+        uiScale = prefs.getInt("ui_scale", 100).coerceIn(90, 120),
     )
 
     fun update(f: (AppSettings) -> AppSettings) {
@@ -65,6 +74,9 @@ class SettingsStore(context: Context) {
             .putStringSet("hidden_curves", s.hiddenCurves)
             .putLong("last_found_at", s.lastFoundAt)
             .putFloat("last_manual_sp", s.lastManualSp.toFloat())
+            .putInt("last_manual_preheat_min", s.lastManualPreheatMin)
+            .putString("theme", s.theme)
+            .putInt("ui_scale", s.uiScale)
             .apply()
         _settings.value = s
     }

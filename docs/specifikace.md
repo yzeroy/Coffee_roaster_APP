@@ -38,6 +38,17 @@ Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nej
 
 ## 4. Obrazovky
 
+### 4.0 Selftest a upozornění
+
+**Dialog „Probíhá selftest“** se ukáže, když Portenta startuje (BOOT → PREFLIGHT → STOP_CONFIRM → READY), po restartu z chyby a při prvním připojení aplikace (a vždy, když se Portenta mezitím restartovala – jiný `boot_id`):
+- řádky **Tlačítko STOP**, **Napájení PSU**, **Teploty** (zrno, vzduch, komín čtou platné hodnoty), **Měniče** (každý zvlášť: rozjezd na kontrolní rychlost a zastavení), vedle každého ✓ / ✗ (během kontroly kolečko),
+- aplikace nic nespouští, jen sleduje `status`; rozhoduje Portenta (při chybě přejde do `HALTED`, dialog ukáže, co selhalo),
+- po skončení musí obsluha kliknout **OK**; během kontroly je OK neaktivní,
+- připojí-li se aplikace k Portentě, která už je připravená, otáčení měničů se neopakuje – kontroluje se jen, že vstupy, teploty a měniče odpovídají,
+- za ohřevu (návrat po výpadku WiFi) se dialog neukazuje.
+
+**Blikající okraj:** u výzev, které vyžadují obsluhu u pražičky (předehřev hotový – nasyp zrno, připraveno k vysypání), bliká **zelený okraj celé aplikace**, dokud výzva svítí. Dotyky nepřebírá.
+
 Levá lišta: **Pražení, Receptury, Záznamy, Nastavení** (v testovací variantě navíc **Test**) a dole červené **STOP ohřevu**. Kalibrace PID a Diagnostika jsou v Nastavení.
 
 ### 4.1 Pražení (hlavní obrazovka)

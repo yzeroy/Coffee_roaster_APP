@@ -3,6 +3,11 @@ package cz.prazicka.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import cz.prazicka.protocol.fmt0
+import cz.prazicka.protocol.fmt1
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -66,26 +71,39 @@ fun PidScreen(vm: AppViewModel) {
     var atLow by remember { mutableStateOf("20") }
     var atHigh by remember { mutableStateOf("60") }
     var atCycles by remember { mutableStateOf("3") }
+    var soakSp by remember { mutableStateOf("200") }
+    var soakMin by remember { mutableStateOf("10") }
+
+    // Pevná časová osa: od spuštění ladění, jinak od otevření obrazovky. Osa se rozšiřuje, neposouvá se.
+    var openT by remember { mutableStateOf<Double?>(null) }
+    if (openT == null && live.isNotEmpty()) openT = live.last().t
+    val lastT = live.lastOrNull()?.t
+    val tuneStart = if (tuning?.elapsedS != null && lastT != null) lastT - tuning.elapsedS else null
+    var origin by remember { mutableStateOf<Double?>(null) }
+    val wantOrigin = tuneStart ?: openT
+    if (wantOrigin != null && (origin == null || (tuneStart != null && kotlin.math.abs(tuneStart - origin!!) > 5.0))) origin = wantOrigin
 
     val vals = Triple(parseNum(kp), parseNum(ki), parseNum(kd))
     val valsOk = vals.first != null && vals.second != null && vals.third != null
 
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val leftW = (maxWidth * 0.32f).coerceIn(290.dp, 380.dp)
     Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Kalibrace PID", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            if (tuning != null) Chip("AUTOMATICKÉ LADĚNÍ", C.purpleText, Color(0xFF2A2540))
+            if (tuning != null) Chip("AUTOMATICKÉ LADĚNÍ", C.purpleText, C.purpleBg)
             Spacer1()
             Row(
                 Modifier.clip(RoundedCornerShape(10.dp)).background(C.warnBg).padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Firmware zatím nemá limity přehřátí. Na skutečné pražičce lad jen pod dohledem.", color = C.warnText, fontSize = 13.sp)
+                Text("Firmware zatím nemá limity přehřátí. Lad jen pod dohledem.", color = C.warnText, fontSize = 13.sp, maxLines = 2)
             }
         }
         if (!hasPid) Text("Připojený firmware zatím PID neumí (chybí v caps).", color = C.warnText)
 
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.width(360.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.width(leftW).fillMaxHeight().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Panel(Modifier.fillMaxWidth()) {
                     Row {
                         SectionTitle("Konstanty")
@@ -108,50 +126,85 @@ fun PidScreen(vm: AppViewModel) {
                     }
                     if (tuning != null) Label("Během ladění nelze konstanty měnit.")
                 }
-                Panel(Modifier.weight(1f).fillMaxWidth()) {
+                Panel(Modifier.fillMaxWidth()) {
                     SectionTitle("Automatické ladění")
+                    Label("1 · Prohřátí bubnu (drží současné konstanty)", C.text, 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Field(soakSp, { soakSp = it }, "Teplota °C", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
+                        Field(soakMin, { soakMin = it }, "Doba min (0 = bez)", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
+                    }
+                    Label("2 · Ladění", C.text, 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Field(atSp, { atSp = it }, "Cíl °C", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
                         Field(atLow, { atLow = it }, "Plyn min", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
                         Field(atHigh, { atHigh = it }, "Plyn max", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
                         Field(atCycles, { atCycles = it }, "Cykly", Modifier.weight(1f), numeric = true, mono = true, enabled = tuning == null)
                     }
+                    val order = listOf("ignite", "soak", "approach", "oscillate", "done")
+                    val cur = order.indexOf(tuning?.phase ?: "")
                     if (tuning != null) {
-                        Row {
-                            Text(if (tuning.phase == "approach") "Dosahování cíle" else "Kmity · cyklus ${tuning.cycle} ze ${tuning.of}", fontWeight = FontWeight.SemiBold)
-                            Spacer1()
-                            Text(mmss(tuning.elapsedS), fontFamily = Mono, color = C.muted)
+                        listOf(
+                            "ignite" to "Zapálení",
+                            "soak" to "Prohřátí bubnu",
+                            "approach" to "Najetí na cíl",
+                            "oscillate" to "Kmity ${tuning.cycle} ze ${tuning.of}",
+                            "done" to "Hotovo – návrh konstant",
+                        ).forEachIndexed { i, (key, name) ->
+                            val state = when { i < cur -> 2; i == cur -> 1; else -> 0 }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Dot(when (state) { 2 -> C.ok; 1 -> C.purple; else -> C.surface3 }, 12.dp)
+                                Text(name, color = when (state) { 1 -> C.text; 2 -> C.muted; else -> C.disabled }, fontWeight = if (state == 1) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                if (key == "soak" && state == 1) Text(tuning.phaseLeftS?.let { "zbývá " + mmss(it) } ?: "", fontFamily = Mono, color = C.purpleText, fontSize = 13.sp)
+                            }
                         }
-                        LinearProgressIndicator(
-                            progress = { if (tuning.of > 0) tuning.cycle.toFloat() / tuning.of else 0f },
-                            modifier = Modifier.fillMaxWidth().height(8.dp),
-                            color = C.purple, trackColor = C.surface3,
-                        )
-                        Label("Typicky 10–20 min. Přeruší se nad cíl + 25 °C nebo po 30 min.")
-                        Grow()
+                        Label("Přeruší se nad max(cíl, prohřátí) + 25 °C, když cíl nejde dosáhnout, nebo po 30 min od najetí.")
                         SecondaryButton("Přerušit ladění", { vm.autotuneAbort() }, Modifier.fillMaxWidth(), color = C.dangerText, border = C.danger)
                     } else {
-                        Label("Spustit jde, když hořák hoří (Pražení) a neběží receptura. Ladit v podmínkách podobných pražení.")
-                        Grow()
+                        val canStart = hasAutotune && s != null && s.roast?.running != true &&
+                            (s.state == RoasterState.RUNNING || (s.state == RoasterState.READY && !s.heatBlocked))
+                        Label(
+                            when {
+                                s == null -> "Bez spojení s Portentou."
+                                s.roast?.running == true -> "Během receptury ladit nejde."
+                                s.state == RoasterState.READY && s.heatBlocked -> "Ohřev je po restartu zablokovaný – odblokuj ho na obrazovce Pražení."
+                                s.state == RoasterState.READY -> "Spustí se z klidu: Portenta rozjede buben a odtah, zapálí, prohřeje buben a pak ladí."
+                                s.state == RoasterState.RUNNING -> "Hořák hoří – ladění začne prohřátím (nebo rovnou najetím na cíl)."
+                                else -> "Spustit jde ve stavu Připraveno nebo za ohřevu (teď: ${s.state.label})."
+                            },
+                        )
                         PrimaryButton("Spustit ladění", {
                             val sp = parseNum(atSp); val lo = parseNum(atLow); val hi = parseNum(atHigh); val cy = atCycles.trim().toIntOrNull()
-                            if (sp == null || lo == null || hi == null || cy == null) vm.toast("Zkontroluj hodnoty ladění") else vm.autotuneStart(sp, lo, hi, cy)
-                        }, Modifier.fillMaxWidth(), enabled = hasAutotune && s != null && s.state == RoasterState.RUNNING && s.roast?.running != true, container = C.purple)
+                            val ssp = parseNum(soakSp); val smin = parseNum(soakMin)
+                            if (sp == null || lo == null || hi == null || cy == null || ssp == null || smin == null) vm.toast("Zkontroluj hodnoty ladění")
+                            else vm.autotuneStart(sp, lo, hi, cy, ssp, (smin * 60).toInt().coerceIn(0, 3600))
+                        }, Modifier.fillMaxWidth(), enabled = canStart, container = C.purple)
                     }
                 }
             }
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // hodnoty čísly
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ValueBox("Teplota zrna", fmt1(s?.temps?.bt) + " °C", Modifier.weight(1.4f), color = C.bt, size = 28.sp)
+                    ValueBox(if (tuning?.phase == "soak") "Cíl (prohřátí)" else "Cíl", fmt0(s?.ctrl?.sp) + " °C", Modifier.weight(1f))
+                    ValueBox("Plyn", if (s?.burner?.power == true) fmt0(s?.burner?.gas) + " %" else "—", Modifier.weight(1f))
+                    ValueBox("RoR", fmt1(s?.temps?.ror), Modifier.weight(1f), color = C.ror)
+                    ValueBox(
+                        if (tuning?.phase == "soak") "Prohřátí · zbývá" else "Ladění · celkem",
+                        if (tuning == null) "—" else mmss(if (tuning.phase == "soak") tuning.phaseLeftS else tuning.elapsedS),
+                        Modifier.weight(1.2f), color = C.purpleText,
+                    )
+                }
                 Panel(Modifier.weight(1f).fillMaxWidth()) {
                     Row {
                         SectionTitle("Živý graf – zrno, cíl, plyn")
                         Spacer1()
-                        Label("posledních 15 minut")
+                        Label(if (tuneStart != null) "od spuštění ladění" else "od otevření obrazovky")
                     }
-                    val cut = (live.lastOrNull()?.t ?: 0.0) - 900.0
-                    val recent = live.filter { it.t >= cut }
+                    val o = origin
+                    val shown = if (o == null) live else live.filter { it.t >= o - 30.0 }
                     RoastGraph(
-                        recent, emptyList(), recent.firstOrNull()?.t, Modifier.weight(1f).fillMaxWidth(),
-                        hidden = setOf(Curves.AIR, Curves.EXH, Curves.ROR), minSpan = 900.0,
+                        shown, emptyList(), o, Modifier.weight(1f).fillMaxWidth(),
+                        hidden = setOf(Curves.AIR, Curves.EXH, Curves.ROR), minSpan = 1200.0,
                     )
                 }
                 val r = result
@@ -173,7 +226,7 @@ fun PidScreen(vm: AppViewModel) {
                                     Row { Text("Navržené", color = C.purpleText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(90.dp)); listOf(r.kp, r.ki, r.kd).forEach { Text(it?.let { v -> f(v) } ?: "—", fontFamily = Mono, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)) } }
                                     Label("Návrh se sám nepoužije. Můžeš ho upravit a vyzkoušet, než ho uložíš.")
                                 }
-                                Column(Modifier.width(220.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     PrimaryButton("Vyzkoušet návrh", {
                                         if (r.kp != null && r.ki != null && r.kd != null) vm.pidSet(r.kp, r.ki, r.kd, false)
                                     }, Modifier.fillMaxWidth())
@@ -188,6 +241,7 @@ fun PidScreen(vm: AppViewModel) {
                 }
             }
         }
+    }
     }
 
     if (confirmSave) {

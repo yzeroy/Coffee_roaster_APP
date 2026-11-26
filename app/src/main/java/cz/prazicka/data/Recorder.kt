@@ -16,13 +16,23 @@ import kotlin.math.abs
  * Začne s ohřevem, při receptuře pokračuje přes chlazení, skončí návratem do klidu nebo chybou.
  * Výpadek spojení = mezera v záznamu.
  */
+/** Značky, které „Smazat značku“ nemaže (mají řídicí význam nebo je zapsala Portenta). */
+private val fixedMarks = setOf("charge", "drop", "preheat", "preheat_hold", "charge_ready")
+
 class Recorder(private val appVersion: String, private val onFinished: (RoastRecord) -> Unit, private val onCheckpoint: (RoastRecord) -> Unit) {
     private val _current = MutableStateFlow<RoastRecord?>(null)
     val current: StateFlow<RoastRecord?> = _current.asStateFlow()
 
-    /** Krátká historie posledních 20 minut pro graf, i když se nic nezaznamenává. */
+    /** Krátká historie posledních 30 minut pro graf, i když se nic nezaznamenává. */
     private val _live = MutableStateFlow<List<Sample>>(emptyList())
     val live: StateFlow<List<Sample>> = _live.asStateFlow()
+
+    /** Značky v čase živého grafu (předehřev, vsypání …) – i bez záznamu. */
+    private val _liveMarks = MutableStateFlow<List<Mark>>(emptyList())
+    val liveMarks: StateFlow<List<Mark>> = _liveMarks.asStateFlow()
+
+    /** Značky, které se zapíšou na začátek záznamu, až začne (např. „Předehřev“ ze stisku tlačítka). */
+    private val pendingStartMarks = ArrayList<String>()
 
     private var startMs: Long = 0
     private var lastMs: Long = -1
@@ -45,12 +55,24 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
         state = s.state.name,
     )
 
+    private fun liveT(ms: Long) = if (liveStartMs < 0) 0.0 else (ms - liveStartMs) / 1000.0
+
     fun onStatus(s: Status) {
-        // živý buffer pro graf
-        if (liveStartMs < 0 || s.ms < lastMs) liveStartMs = s.ms
-        val liveT = (s.ms - liveStartMs) / 1000.0
+        // živý buffer pro graf: vzorky nejvýš po 0,4 s (status může chodit častěji), posledních 30 min
+        if (liveStartMs < 0 || s.ms < lastMs) {
+            liveStartMs = s.ms
+            _live.value = emptyList()
+            _liveMarks.value = emptyList()
+        }
+        val liveT = liveT(s.ms)
         val l = _live.value
-        _live.value = (if (l.size > 2600) l.drop(200) else l) + sampleOf(s, liveT)
+        val prev = l.lastOrNull()
+        if (prev == null || liveT - prev.t >= 0.4 || prev.state != s.state.name) {
+            val cut = liveT - 1800.0
+            val trimmed = if (l.isNotEmpty() && l.first().t < cut - 60.0) l.dropWhile { it.t < cut } else l
+            _live.value = trimmed + sampleOf(s, liveT)
+            if (trimmed !== l) _liveMarks.value = _liveMarks.value.filter { it.t >= cut }
+        }
 
         lastStatus = s
         val rec = _current.value
@@ -72,7 +94,10 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
             }
             val t = (s.ms - startMs) / 1000.0
             val gap = lastMs >= 0 && s.ms - lastMs > 2500
-            _current.value = rec.copy(samples = rec.samples + sampleOf(s, t), gaps = rec.gaps + if (gap) 1 else 0)
+            val prevS = rec.samples.lastOrNull()
+            if (prevS == null || t - prevS.t >= 0.4 || prevS.state != s.state.name) {
+                _current.value = rec.copy(samples = rec.samples + sampleOf(s, t), gaps = rec.gaps + if (gap) 1 else 0)
+            }
             val end = when {
                 s.state == RoasterState.HALTED -> true
                 s.state.heating -> false
@@ -99,10 +124,11 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
             recipeId = s.roast?.takeIf { it.running }?.recipeId,
             manual = s.roast?.running != true,
             samples = listOf(sampleOf(s, 0.0)),
-            marks = emptyList(),
+            marks = pendingStartMarks.map { Mark(it, 0.0, s.temps.bt) },
             appVersion = appVersion,
             fw = fw,
         )
+        pendingStartMarks.clear()
     }
 
     /** „Začít zaznamenávat“ během ručního pražení bez záznamu – od tohoto okamžiku. */
@@ -121,29 +147,65 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
     }
 
     fun onEvent(e: Event) {
-        val r = _current.value ?: return
         if (e.code != "roast") return
-        val ev = e.roastEvent ?: return
-        if (ev !in setOf("charge", "dry_end", "fc_start", "fc_end", "sc_start", "drop")) return
-        val t = (e.ms - startMs) / 1000.0
+        val raw = e.roastEvent ?: return
+        // „start“ receptury = začátek předehřevu
+        val ev = if (raw == "start") "preheat" else raw
+        if (ev !in setOf("preheat", "preheat_hold", "charge_ready", "charge", "dry_end", "fc_start", "fc_end", "sc_start", "drop")) return
+        if (!e.replay || _liveMarks.value.none { it.event == ev }) {
+            val lt = liveT(e.ms)
+            if (_liveMarks.value.none { it.event == ev && abs(it.t - lt) < 1.0 }) {
+                _liveMarks.value = (_liveMarks.value + Mark(ev, lt, lastStatus?.temps?.bt)).sortedBy { it.t }
+            }
+        }
+        val r = _current.value
+        if (r == null) {
+            // receptura: „Předehřev“ přijde dřív, než záznam začne (záznam startuje se stavem ohřevu)
+            if (ev == "preheat" && !pendingStartMarks.contains(ev)) pendingStartMarks.add(ev)
+            return
+        }
+        val t = ((e.ms - startMs) / 1000.0).coerceAtLeast(0.0)
         if (r.marks.any { it.event == ev && abs(it.t - t) < 1.0 }) return
         val bt = r.samples.minByOrNull { abs(it.t - t) }?.bt
         _current.value = r.copy(marks = (r.marks + Mark(ev, t, bt)).sortedBy { it.t })
     }
 
-    /** Značka zadaná v aplikaci (pražení bez receptury, poznámka). */
+    /** Značka zadaná v aplikaci (pražení bez receptury, poznámka). Do živého grafu vždy, do záznamu když běží. */
     fun addLocalMark(event: String, text: String = ""): Boolean {
+        lastStatus?.let { s -> _liveMarks.value = (_liveMarks.value + Mark(event, liveT(s.ms), s.temps.bt, text)).sortedBy { it.t } }
         val r = _current.value ?: return false
         val last = r.samples.lastOrNull() ?: return false
         _current.value = r.copy(marks = (r.marks + Mark(event, last.t, last.bt, text)).sortedBy { it.t })
         return true
     }
 
+    /** Značka, která má být i na začátku záznamu, když ještě nezačal (ruční předehřev před zapálením). */
+    fun markAtStart(event: String) {
+        if (_current.value != null) { addLocalMark(event); return }
+        lastStatus?.let { s -> _liveMarks.value = (_liveMarks.value + Mark(event, liveT(s.ms), s.temps.bt)).sortedBy { it.t } }
+        if (!pendingStartMarks.contains(event)) pendingStartMarks.add(event)
+    }
+
+    /**
+     * Reset grafu (ruční pražení): smaže dosavadní průběh, čas začne od 0.
+     * Běží-li záznam, dosavadní část se z něj odstraní a záznam pokračuje od resetu.
+     */
+    fun resetGraph() {
+        val s = lastStatus ?: return
+        liveStartMs = s.ms
+        _live.value = listOf(sampleOf(s, 0.0))
+        _liveMarks.value = emptyList()
+        val r = _current.value ?: return
+        startMs = s.ms
+        _current.value = r.copy(samples = listOf(sampleOf(s, 0.0)), marks = emptyList(), gaps = 0)
+    }
+
     /** Smaže poslední značku jen v záznamu (Portenta značky nevrací). */
     fun removeLastMark(): Mark? {
         val r = _current.value ?: return null
-        val m = r.marks.lastOrNull { it.event != "charge" && it.event != "drop" } ?: return null
+        val m = r.marks.lastOrNull { it.event !in fixedMarks } ?: return null
         _current.value = r.copy(marks = r.marks - m)
+        _liveMarks.value.lastOrNull { it.event == m.event }?.let { lm -> _liveMarks.value = _liveMarks.value - lm }
         return m
     }
 }

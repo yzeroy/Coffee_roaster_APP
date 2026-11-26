@@ -55,6 +55,7 @@ data class RecipeDraft(
     val id: String,
     val name: String,
     val chargeBt: String,
+    val preheat: String,
     val chargeGas: String,
     val pidDelay: String,
     val curve: List<Pair<String, String>>,
@@ -69,7 +70,7 @@ data class RecipeDraft(
 private fun n(v: Double) = if (v == Math.floor(v)) v.toLong().toString() else v.toString().replace('.', ',')
 
 fun Recipe.toDraft() = RecipeDraft(
-    id = id, name = name, chargeBt = n(chargeBt), chargeGas = n(chargeGas), pidDelay = mmss(pidDelayS.toDouble()),
+    id = id, name = name, chargeBt = n(chargeBt), preheat = mmss(preheatS.toDouble()), chargeGas = n(chargeGas), pidDelay = mmss(pidDelayS.toDouble()),
     curve = curve.map { mmss(it.t.toDouble()) to n(it.bt) },
     vfd = vfd.map { listOf(mmss(it.t.toDouble()), it.drum.toString(), it.exhaust.toString(), it.cooler.toString(), it.coolfan.toString()) },
     dropBt = n(dropBt), dropTMax = mmss(dropTMax.toDouble()), cooler = coolCooler.toString(), coolfan = coolFan.toString(), notes = notes,
@@ -85,6 +86,7 @@ fun RecipeDraft.parse(): Pair<Recipe?, String?> {
             id = id,
             name = name.trim(),
             chargeBt = num(chargeBt, "Vsypání při"),
+            preheatS = time(preheat, "Výdrž předehřevu"),
             chargeGas = num(chargeGas, "Plyn po vsypání"),
             pidDelayS = time(pidDelay, "PID převezme po"),
             curve = curve.mapIndexed { i, (t, bt) -> CurvePoint(time(t, "Bod ${i + 1}"), num(bt, "Bod ${i + 1}")) },
@@ -205,10 +207,11 @@ private fun RecipeEditor(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Field(d.name, { set(d.copy(name = it.take(32))) }, "Název", Modifier.weight(1f))
-                Field(d.chargeBt, { set(d.copy(chargeBt = it)) }, "Vsypání při (°C)", Modifier.width(140.dp), numeric = true, mono = true)
-                Field(d.chargeGas, { set(d.copy(chargeGas = it)) }, "Plyn po vsypání (%)", Modifier.width(150.dp), numeric = true, mono = true)
-                Field(d.pidDelay, { set(d.copy(pidDelay = it)) }, "PID převezme po", Modifier.width(140.dp), mono = true)
+                Field(d.name, { set(d.copy(name = it.take(32))) }, "Název", Modifier.weight(1.6f))
+                Field(d.chargeBt, { set(d.copy(chargeBt = it)) }, "Předehřev na (°C)", Modifier.weight(1f), numeric = true, mono = true)
+                Field(d.preheat, { set(d.copy(preheat = it)) }, "Výdrž (mm:ss)", Modifier.weight(1f), mono = true)
+                Field(d.chargeGas, { set(d.copy(chargeGas = it)) }, "Plyn po vsypání (%)", Modifier.weight(1f), numeric = true, mono = true)
+                Field(d.pidDelay, { set(d.copy(pidDelay = it)) }, "PID převezme po", Modifier.weight(1f), mono = true)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Panel(Modifier.weight(1f).height(300.dp)) {

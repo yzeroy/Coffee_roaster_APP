@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -63,7 +64,7 @@ fun RecordsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
             Segmented(listOf("all" to "Vše", "manual" to "Ručně", "recipe" to "Receptura"), filter, { filter = it }, Modifier.fillMaxWidth(), height = 36.dp)
             current?.let {
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.surface2).border(1.dp, C.danger, RoundedCornerShape(10.dp)).padding(10.dp)) {
-                    Text("● Právě se zaznamenává: ${it.title}", color = Color_RecFg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("● Právě se zaznamenává: ${it.title}", color = C.recFg, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
             if (list.isEmpty()) Text("Zatím žádné záznamy.", color = C.muted)
@@ -100,7 +101,6 @@ fun RecordsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
     }
 }
 
-private val Color_RecFg = androidx.compose.ui.graphics.Color(0xFFFFB3B3)
 
 @Composable
 private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit, modifier: Modifier) {
@@ -131,7 +131,7 @@ private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit,
                     if (r.marks.isEmpty()) Label("Bez značek")
                     r.marks.forEach { m ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(if (m.event == "note") "Poznámka: ${m.text}" else Texts.roastEvent(m.event), fontSize = 13.sp, modifier = Modifier.width(220.dp), maxLines = 1)
+                            Text(if (m.event == "note") "Poznámka: ${m.text}" else Texts.roastEvent(m.event), fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1)
                             Text(mmss(m.t - c), fontFamily = Mono, fontSize = 13.sp)
                             Text(if (m.bt == null) "" else "${fmt0(m.bt)} °C", fontFamily = Mono, fontSize = 13.sp, color = C.btSoft)
                         }
@@ -148,7 +148,7 @@ private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit,
                     SecondaryButton("Uložit", { vm.saveRecord(r.copy(notes = notes, weightIn = parseNum(wIn), weightOut = parseNum(wOut))); vm.toast("Záznam uložen") })
                 }
             }
-            Panel(Modifier.width(360.dp).fillMaxHeight(), border = C.bt) {
+            Panel(Modifier.weight(0.7f).widthIn(max = 380.dp).fillMaxHeight(), border = C.bt) {
                 SectionTitle("Receptura z tohoto záznamu", C.btSoft)
                 Field(recipeName, { recipeName = it.take(32) }, "Název", Modifier.fillMaxWidth())
                 Text(

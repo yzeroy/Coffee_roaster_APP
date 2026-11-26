@@ -6,7 +6,7 @@ Aplikace funguje jen s firmwarem Portenty, který implementuje API kontrakt (TCP
 
 ## Stav
 
-**Demo verze ve větvi `test`.** Testovací varianta „Pražička TEST“ obsahuje vestavěný simulátor Portenty, takže jde vyzkoušet bez desky i bez firmwaru. Spojení se skutečnou Portentou je napsané podle `API.md` 1.4, ale zatím neověřené. Specifikace už počítá s `API.md` 1.6 (ladění PID s prohřátím bubnu), aplikace to zatím neumí.
+**Demo verze ve větvi `test`.** Testovací varianta „Pražička TEST“ obsahuje vestavěný simulátor Portenty, takže jde vyzkoušet bez desky i bez firmwaru. Spojení se skutečnou Portentou je napsané podle `API.md` 1.7, ale zatím neověřené.
 
 ## Sestavení
 

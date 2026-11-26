@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +48,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun SettingsScreen(vm: AppViewModel) {
+fun SettingsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
     val settings by vm.settings.collectAsState()
     val update by vm.update.collectAsState()
     val link by vm.link.collectAsState()
@@ -72,7 +74,14 @@ fun SettingsScreen(vm: AppViewModel) {
     Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Nastavení", fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1.4f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Panel(Modifier.fillMaxWidth()) {
+                    SectionTitle("Nástroje")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ToolButton("Kalibrace PID", "konstanty, automatické ladění s prohřátím", Modifier.weight(1f)) { go(Screen.Pid) }
+                        ToolButton("Diagnostika", "firmware, log událostí, spojení", Modifier.weight(1f)) { go(Screen.Diag) }
+                    }
+                }
                 Panel(Modifier.fillMaxWidth()) {
                     Row {
                         SectionTitle("Aktualizace aplikace")
@@ -87,7 +96,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     val latest = update.latest
                     if (latest != null) {
                         Column(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(androidx.compose.ui.graphics.Color(0xFF15211B))
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.okPanelBg)
                                 .border(1.dp, C.ok, RoundedCornerShape(10.dp)).padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
@@ -127,7 +136,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Field(host, { host = it }, "Adresa Portenty", Modifier.weight(1f), mono = true, enabled = !useSim)
-                        Field(port, { port = it }, "Port", Modifier.width(110.dp), numeric = true, mono = true, enabled = !useSim)
+                        Field(port, { port = it }, "Port", Modifier.width(100.dp), numeric = true, mono = true, enabled = !useSim)
                         SecondaryButton(if (searching) "Hledám…" else "Najít Portentu", {
                             searching = true
                             scope.launch {
@@ -164,7 +173,21 @@ fun SettingsScreen(vm: AppViewModel) {
                 }
             }
 
-            Column(Modifier.width(420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Panel(Modifier.fillMaxWidth()) {
+                    SectionTitle("Vzhled")
+                    Label("Motiv", size = 13.sp)
+                    Segmented(
+                        listOf("dark" to "Tmavý", "light" to "Světlý", "system" to "Podle systému"), settings.theme,
+                        { v -> vm.updateSettings { it.copy(theme = v) } }, Modifier.fillMaxWidth(),
+                    )
+                    Label("Velikost rozhraní", size = 13.sp)
+                    Segmented(
+                        listOf(90, 100, 110, 120).map { it.toString() to "$it %" }, settings.uiScale.toString(),
+                        { v -> vm.updateSettings { it.copy(uiScale = v.toInt()) } }, Modifier.fillMaxWidth(),
+                    )
+                    Label("Rozvržení se přizpůsobí obrazovce samo, velikostí jde doladit.")
+                }
                 Panel(Modifier.fillMaxWidth()) {
                     SectionTitle("Pražení a výzvy")
                     CheckRow("Zvuk výzvy ke vsypání a vysypání", settings.soundPrompts) { v -> vm.updateSettings { it.copy(soundPrompts = v) } }
@@ -193,11 +216,26 @@ fun SettingsScreen(vm: AppViewModel) {
                 Panel(Modifier.fillMaxWidth()) {
                     SectionTitle("O aplikaci")
                     KeyValue("Aplikace", "${if (BuildConfig.IS_TEST) "Pražička TEST" else "Pražička"} ${BuildConfig.VERSION_NAME}")
-                    KeyValue("Protokol", "${Proto.VERSION} (API 1.4)")
+                    KeyValue("Protokol", "${Proto.VERSION} (API 1.7)")
                     KeyValue("Zdroj", "github.com/${BuildConfig.GITHUB_REPO}")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ToolButton(title: String, sub: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.heightIn(min = 64.dp).clip(RoundedCornerShape(10.dp)).background(C.surface2)
+            .border(1.dp, C.line, RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            Text(sub, color = C.muted, fontSize = 12.sp)
+        }
+        Text("›", color = C.muted, fontSize = 22.sp)
     }
 }
 

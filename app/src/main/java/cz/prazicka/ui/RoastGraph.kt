@@ -33,7 +33,7 @@ object Curves {
     const val EXH = "exh"
     const val ROR = "ror"
     const val GAS = "gas"
-    val all = listOf(BT to "Zrno", SP to "Křivka / cíl", AIR to "Vzduch", EXH to "Odtah", ROR to "RoR", GAS to "Plyn")
+    val all = listOf(BT to "Zrno", SP to "Křivka / cíl", AIR to "Vzduch (okolí)", EXH to "Odtah (komín)", ROR to "RoR", GAS to "Plyn")
 }
 
 /**
@@ -153,6 +153,8 @@ fun RoastGraph(
             val xx = x(m.t - origin)
             val col = when (m.event) {
                 "fc_start", "fc_end", "sc_start" -> C.ror
+                "preheat", "preheat_hold", "charge_ready" -> C.btSoft
+                "charge" -> C.ok
                 "note" -> C.purple
                 else -> C.muted
             }

@@ -58,6 +58,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val records = c.records.records
     val currentRecord = c.recorder.current
     val live = c.recorder.live
+    val liveMarks = c.recorder.liveMarks
+    val manualPreheat = c.preheat.ui
+    val selftest = c.selftest.ui
 
     val heating: StateFlow<Boolean> = status.map { it?.state?.heating == true }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -107,10 +110,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setVfd(i: Int, pct: Int) = cmd("vfd_set") { put("vfd", i); put("pct", pct) }
     fun heatStart() = cmd("heat_start")
 
-    /** Ruční pražení z dialogu: cílová teplota (PID ji drží od zapálení, API 1.4) a volba záznamu. */
-    fun manualStart(sp: Double, record: Boolean) {
+    /**
+     * Ruční pražení z dialogu: cílová teplota (PID ji drží od zapálení, API 1.4), předehřev s výdrží
+     * (počítá aplikace) a volba záznamu.
+     */
+    fun manualStart(sp: Double, record: Boolean, preheatMin: Int = 0) {
         val target = r1(sp.coerceIn(50.0, 260.0))
-        c.settings.update { it.copy(lastManualSp = target) }
+        val hold = preheatMin.coerceIn(0, 60)
+        c.settings.update { it.copy(lastManualSp = target, lastManualPreheatMin = hold) }
         c.recorder.nextManualChoice = record
         val hasPid = client.hello?.has("pid") == true
         if (!hasPid) toast("Firmware zatím neumí PID – pražení začne s ručním plynem")
@@ -119,9 +126,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (!r.ok) {
                 c.recorder.nextManualChoice = null
                 toast(Texts.err(r.err, r.msg))
+            } else {
+                c.recorder.markAtStart("preheat")
+                if (hold > 0 && hasPid) c.preheat.start(target, hold * 60)
             }
         }
     }
+
+    fun resetGraph() {
+        c.recorder.resetGraph()
+        toast("Graf vynulován")
+    }
+
+    fun dismissSelftest() = c.selftest.dismiss()
 
     /** Návrat z ručního plynu k řízení teplotou. */
     fun followTemperature() = cmd("mode_set") { put("mode", "pid") }
@@ -140,8 +157,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val roast = status.value?.roast
         if (roast != null && (roast.phase == "preheat" || roast.phase == "roast")) {
             cmd("roast_event") { put("event", event) }
-        } else if (!c.recorder.addLocalMark(event)) {
-            toast("Záznam neběží – značky se zapisují jen během pražení")
+        } else {
+            if (event == "charge") {
+                val p = c.preheat.ui.value
+                if (p != null && p.phase != cz.prazicka.data.ManualPreheat.Phase.DONE) toast("Vsypáno před koncem předehřevu")
+                c.preheat.charged()
+            }
+            if (!c.recorder.addLocalMark(event)) toast("Záznam neběží – značka je jen v grafu")
         }
     }
 
@@ -178,8 +200,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         put("kp", kp); put("ki", ki); put("kd", kd); put("save", save)
     }
 
-    fun autotuneStart(sp: Double, low: Double, high: Double, cycles: Int) = cmd("autotune_start", "Ladění zahájeno") {
+    /** API 1.6: s prohřátím bubnu (soak) se starým PID; spustit jde i z klidu (Portenta zapálí). */
+    fun autotuneStart(sp: Double, low: Double, high: Double, cycles: Int, soakSp: Double, soakS: Int) = cmd("autotune_start", "Ladění zahájeno") {
         put("sp", sp); put("gas_low", low); put("gas_high", high); put("cycles", cycles)
+        put("soak_sp", soakSp); put("soak_s", soakS)
     }
 
     fun autotuneAbort() = cmd("autotune_abort")
