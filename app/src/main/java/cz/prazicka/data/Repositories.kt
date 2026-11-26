@@ -134,9 +134,10 @@ data class RoastRecord(
     }
 
     companion object {
-        fun fromJson(o: JsonObject): RoastRecord? = try {
-            RoastRecord(
-                id = o.str("id") ?: return null,
+        fun fromJson(o: JsonObject): RoastRecord? {
+            val id = o.str("id") ?: return null
+            return try { RoastRecord(
+                id = id,
                 startedAt = o.lng("started_at") ?: 0L,
                 recipeName = o.str("recipe_name"),
                 recipeId = o.str("recipe_id"),
@@ -163,8 +164,9 @@ data class RoastRecord(
                     )
                 } ?: emptyList(),
             )
-        } catch (e: Exception) {
-            null
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 }
