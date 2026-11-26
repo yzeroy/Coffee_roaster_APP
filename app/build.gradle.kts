@@ -8,6 +8,9 @@ plugins {
 // Verze aplikace. Číslo sestavení (versionCode) dodává GitHub Actions, lokálně 1.
 val appVersionName = "0.1.0"
 val ciVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+// Při vydání z tagu (v0.1.0 / v0.1.0-test.3) musí verze aplikace přesně odpovídat tagu,
+// jinak by kontrola aktualizací porovnávala nesouhlasná čísla.
+val tagVersion = System.getenv("APP_VERSION")?.takeIf { it.isNotBlank() }
 
 // Podpisový klíč se nikdy neukládá do repozitáře. Když jsou proměnné prostředí
 // nastavené (GitHub Secrets), APK se podepíše jím, jinak ladicím klíčem.
@@ -23,7 +26,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = ciVersionCode
-        versionName = appVersionName
+        versionName = tagVersion ?: appVersionName
         buildConfigField("String", "GITHUB_REPO", "\"yzeroy/Coffee_roaster_APP\"")
     }
 
@@ -39,7 +42,7 @@ android {
         create("zkusebni") {
             dimension = "varianta"
             applicationIdSuffix = ".test"
-            versionNameSuffix = "-test.$ciVersionCode"
+            if (tagVersion == null) versionNameSuffix = "-test.$ciVersionCode"
             buildConfigField("String", "VARIANT", "\"test\"")
             buildConfigField("boolean", "IS_TEST", "true")
             resValue("string", "app_name", "Pražička TEST")
