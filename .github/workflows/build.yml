@@ -1,0 +1,95 @@
+name: Sestavení
+
+# Větev test → testovací varianta, větev main → provozní varianta.
+# Tag vX.Y.Z na main → stabilní vydání, tag vX.Y.Z-test.N na test → testovací vydání.
+on:
+  push:
+    branches: [ test, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Výběr varianty
+        id: varianta
+        run: |
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_BASE_REF" == main && "$GITHUB_HEAD_REF" != test ]]; then
+            echo "flavor=Provozni" >> "$GITHUB_OUTPUT"
+            echo "dir=provozni" >> "$GITHUB_OUTPUT"
+          else
+            echo "flavor=Zkusebni" >> "$GITHUB_OUTPUT"
+            echo "dir=zkusebni" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verze z tagu
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Podpisový klíč (jen když je nastavený v Secrets)
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "SIGNING_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Podpisový klíč není nastavený – APK je podepsané ladicím klíčem a nepůjde jím aktualizovat dříve nainstalovanou verzi."
+          fi
+
+      - name: Unit testy
+        run: ./gradlew --no-daemon test${{ steps.varianta.outputs.flavor }}DebugUnitTest
+
+      - name: Sestavení APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: ./gradlew --no-daemon assemble${{ steps.varianta.outputs.flavor }}Release
+
+      - name: Výsledky testů
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vysledky-testu
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: APK jako artefakt
+        uses: actions/upload-artifact@v4
+        with:
+          name: prazicka-${{ steps.varianta.outputs.dir }}-${{ github.run_number }}
+          path: app/build/outputs/apk/${{ steps.varianta.outputs.dir }}/release/*.apk
+
+      - name: Vydání na GitHubu (jen pro tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          APK=$(ls app/build/outputs/apk/${{ steps.varianta.outputs.dir }}/release/*.apk | head -1)
+          cp "$APK" "prazicka-$TAG.apk"
+          if [[ "$TAG" == *-test.* ]]; then PRE="--prerelease"; else PRE=""; fi
+          # Vydání mohlo vzniknout ručně na GitHubu (Releases → Draft a new release) – pak jen přidat APK.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "prazicka-$TAG.apk" --clobber
+          else
+            gh release create "$TAG" "prazicka-$TAG.apk" --title "$TAG" --generate-notes $PRE
+          fi
