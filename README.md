@@ -6,7 +6,13 @@ Aplikace funguje jen s firmwarem Portenty, který implementuje API kontrakt (TCP
 
 ## Stav
 
-Návrh – specifikace hotová, kód zatím není.
+**Demo verze ve větvi `test`.** Testovací varianta „Pražička TEST“ obsahuje vestavěný simulátor Portenty, takže jde vyzkoušet bez desky i bez firmwaru. Spojení se skutečnou Portentou je napsané podle `API.md` 1.4, ale zatím neověřené.
+
+## Sestavení
+
+- GitHub Actions sestaví APK při každém odeslání do `test` (testovací varianta) a `main` (provozní). APK je v záložce Actions u daného běhu, v části Artifacts.
+- Lokálně: Android Studio, nebo `./gradlew assembleZkusebniDebug` / `assembleProvozniDebug` (JDK 17).
+- Testy: `./gradlew testZkusebniDebugUnitTest` (simulátor, kontrola receptur, čtení stavu).
 
 ## Dokumentace
 
