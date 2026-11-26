@@ -49,8 +49,16 @@ Rozdělená na tři části:
 - Indikátory: spojení, plamen, interlock, STOP, PSU, simulace (když firmware hlásí `sim_vfd`/`sim_temp`).
 
 **Ovládání (spodní pruh nebo boční panel)**
-- `Ohřev` / `Stop ohřevu` (stop vždy na jeden dotek).
-- Režim: Ručně / PID / Receptura; posuvník plynu (10–100 %), cílová teplota pro PID.
+- `Spustit ruční pražení` / `Spustit recepturu`; zastavení tlačítkem STOP ohřevu v liště.
+- **Teplotu vždy drží PID.** Hlavní ovládací prvek je **cílová teplota zrna** (velké číslo s tlačítky −/+ po 1 °C a 5 °C); změna se pošle `sp_set`.
+- Posuvník plynu (10–100 %) je k dispozici vždy, ale **posunutí přepne na ruční plyn** (`gas_set` → režim `manual`). Aplikace to výrazně ukáže („Plyn řídíš ručně“) a nabídne velké tlačítko **„Řídit teplotou“** (`mode_set pid`), které vrátí řízení na cílovou teplotu plynule, bez skoku plynu.
+- Režim se zobrazuje jako Teplota (PID) / Ručně / Receptura.
+
+**Spuštění ručního pražení (dialog):**
+- cílová teplota zrna (předvyplněná poslední použitá),
+- **„Zaznamenat toto pražení?“ Ano / Ne** – výchozí volba podle Nastavení („Ukládat ruční pražení“),
+- tlačítko **Spustit** pošle `heat_start` s `sp` (API 1.4), Portenta po zapálení sama přejde do PID na zadanou teplotu.
+- Pokud firmware ještě neumí PID (`pid` chybí v `caps`), dialog cílovou teplotu nenabízí a upozorní, že pražení začne v ručním režimu.
 - Měniče: buben, odtah, míchač, ventilátor – příkaz a skutečná rychlost (%), Hz, chyba měniče. Rychlé volby 0 / 10 / … / 100 %.
 - Tlačítka událostí: Vsypání, Konec sušení, 1. crack start/konec, 2. crack, Vysypání.
 - Opakované zapálení (`reignite`), když plamen zhasne za provozu.
@@ -104,6 +112,7 @@ Rozdělená na tři části:
 - Adresa Portenty a port (výchozí 5020) – tlačítko „Najít Portentu“ (UDP dotaz podle API bod 2.3), jinak ruční zadání IP. Nalezená adresa se uloží.
 - Token (8–32 znaků ASCII bez mezer, aplikace kontroluje už při zadání), test spojení.
 - Zvuky výzev, motiv, jednotky času v grafu, výchozí viditelnost křivek.
+- „Ukládat ruční pražení“ – výchozí odpověď v dialogu před ručním pražením.
 - Aktualizace aplikace (bod 7).
 - O aplikaci: verze aplikace, varianta (provozní / testovací), verze protokolu.
 
@@ -120,7 +129,8 @@ Podle API (body 4 a 5):
 
 ## 6. Záznam pražení
 
-- Záznam začíná `recipe_start` nebo `heat_start` (případně ručně) a končí `recipe_end`, `heat_stop` po vysypání nebo ručně.
+- Záznam začíná `recipe_start` (vždy) nebo `heat_start` (jen když obsluha v dialogu zvolila „Zaznamenat“) a končí `recipe_end`, návratem do klidu po `heat_stop`, nebo chybou.
+- Během ručního pražení bez záznamu jde záznam ještě zapnout tlačítkem „Začít zaznamenávat“ (od toho okamžiku).
 - Ukládá se každá zpráva `status` (2 Hz) a každý `event`. Výpadky spojení zůstanou v záznamu jako mezery a jsou v grafu vyznačené.
 - Ukládání průběžně během pražení (při pádu aplikace se záznam neztratí).
 - Formát: vlastní, verzovaný (obsahuje verzi aplikace, firmwaru a protokolu). Export do CSV. **Export do formátu Artisanu (.alog)** – k ověření, zda je proveditelný, užitečný pro porovnání se staršími pražením.
