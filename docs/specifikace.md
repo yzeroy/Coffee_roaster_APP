@@ -49,6 +49,7 @@ Rozdělená na tři části:
 - Křivky: teplota zrna `bt`, vzduch – okolí `air` (TP1, teplota **vně** pražičky, mění se pomalu), odtah – komín `exh` (TP2), křivka vzduchu (okolí) je ve výchozím stavu skrytá – leží pod rozsahem osy, hodnota je v panelu, RoR zrna `bt_ror` (vlastní osa vpravo), cílová teplota `sp`, plyn `out`/`gas` (vlastní osa 0–100 %).
 - Křivka receptury (`curve`) na pozadí, když je nahraná.
 - Svislé značky událostí (`charge`, `dry_end`, `fc_start`, `fc_end`, `sc_start`, `drop`) a chyb.
+- **Předehřev je v grafu vždy zapsaný** (receptura i ruční pražení): značka **Předehřev** v okamžiku spuštění (stisk tlačítka), značka **Teplota dosažena** (začátek výdrže, u receptury `preheat_hold`), značka **Předehřev hotov** (`charge_ready`) a pásmo výdrže podbarvené. Značky se ukládají i do záznamu.
 - Viditelnost jednotlivých křivek lze zapínat a vypínat; přiblížení a posun gestem, tlačítko „zpět na živý průběh“.
 - **Reset grafu** (jen ruční pražení, tj. bez receptury): smaže dosavadní průběh v grafu a začne čas znovu od 0 (např. po předehřátí před vsypáním). S potvrzením. Když běží záznam, dosavadní část se ze záznamu odstraní a záznam pokračuje od resetu. Na řízení pražičky nemá žádný vliv (Portentě se nic neposílá). U receptury se nenabízí – tam čas určuje vsypání v Portentě.
 
@@ -65,6 +66,7 @@ Rozdělená na tři části:
 
 **Spuštění ručního pražení (dialog):**
 - cílová teplota zrna (předvyplněná poslední použitá),
+- **Předehřev – výdrž** (min, 0 = bez předehřevu; předvyplněná poslední použitá): pražení začíná z pokojové teploty, PID dojede na cílovou teplotu a drží ji po zadanou dobu, teprve potom se objeví výzva **Vsypání**. Odpočet běží od prvního dosažení cíle ±3 °C. U ručního pražení odpočet počítá aplikace (Portenta o něm neví); před koncem výdrže jde vsypat i tak, s upozorněním.
 - **„Zaznamenat toto pražení?“ Ano / Ne** – výchozí volba podle Nastavení („Ukládat ruční pražení“),
 - tlačítko **Spustit** pošle `heat_start` s `sp` (API 1.4), Portenta po zapálení sama přejde do PID na zadanou teplotu.
 - Pokud firmware ještě neumí PID (`pid` chybí v `caps`), dialog cílovou teplotu nenabízí a upozorní, že pražení začne v ručním režimu.
@@ -73,7 +75,8 @@ Rozdělená na tři části:
 - Opakované zapálení (`reignite`), když plamen zhasne za provozu.
 
 **Vyzvání obsluhy**
-- `charge_ready:true` → výrazná výzva „Předehřev hotový – vsyp zrno“ se zvukem.
+- Během předehřevu velký odpočet „Předehřev – zbývá mm:ss“ (receptura: `status.roast.preheat_left_s`), před dosažením teploty „Předehřev – ohřev na X °C“.
+- `charge_ready:true` (u ručního pražení konec výdrže v aplikaci) → výrazná výzva „Předehřev hotový – vsyp zrno“ se zvukem. Tlačítko Vsypání je do té doby méně výrazné.
 - `drop_ready:true` → výzva „Připraveno k vysypání“ se zvukem.
 - Výzvu lze zavřít; tlačítko akce zůstává zvýrazněné.
 
@@ -86,7 +89,7 @@ Rozdělená na tři části:
 
 - Knihovna: seznam, hledání, duplikace, smazání, import/export souboru.
 - Editor:
-  - název, `charge_bt`, `charge_gas`, `pid_delay_s`,
+  - název, `charge_bt`, **předehřev – výdrž** (`preheat_s`, API 1.7), `charge_gas`, `pid_delay_s`,
   - křivka teploty zrna – tabulka bodů i úprava tažením bodů v grafu,
   - rozpis měničů po časech (tabulka),
   - podmínka vysypání (`drop.bt`, `drop.t_max`), chlazení (`cool`).
@@ -186,6 +189,12 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
   - úplné odpojení a znovupřipojení,
   - zpožděné odpovědi.
 - Ruční odeslání libovolné zprávy JSON a přehled surového provozu (pro ladění kontraktu).
+
+**Vestavěný simulátor Portenty** (jen testovací varianta, demo bez desky) – tepelný model:
+- vzduch (okolí, TP1) drží kolem **25 °C** po celou dobu (jen malý šum),
+- odtah (komín, TP2) sleduje teplotu zrna s odchylkou nejvýš **±10 °C**,
+- zrno se ohřívá z pokojové teploty; PID předehřevu a ladění musí cíl skutečně dosáhnout,
+- propad teploty zrna po vsypání.
 
 **Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen když Portenta v `hello_ack` hlásí `sim_vfd:true` a `sim_temp:true`**. Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
 
