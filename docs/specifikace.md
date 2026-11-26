@@ -46,7 +46,7 @@ Rozdělená na tři části:
 **Panel hodnot (pruh nahoře nebo vpravo)**
 - Velké číslo: teplota zrna a RoR. Menší: vzduch, odtah, plyn, cíl.
 - Stav automatu česky (např. „Připraveno“, „Zapalování“, „Pražení“, „Chyba“), fáze receptury, čas od vsypání.
-- Indikátory: spojení, plamen, interlock, STOP, PSU, simulace (když firmware hlásí `sim_vfd`/`sim_temp`).
+- Indikátory vpravo nahoře: spojení, **STOP OK**, **PSU OK**, **PLAMEN OK / NOK / VYP** (`burner.flame`: 1 = OK, 2 = zapálení selhalo = NOK, 0 = hořák nehoří = VYP), simulace (když firmware hlásí `sim_vfd`/`sim_temp`).
 
 **Ovládání (spodní pruh nebo boční panel)**
 - `Spustit ruční pražení` / `Spustit recepturu`; zastavení tlačítkem STOP ohřevu v liště.
