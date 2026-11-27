@@ -43,11 +43,12 @@ Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nej
 **Dialog „Probíhá selftest“** se ukáže, když Portenta startuje (BOOT → PREFLIGHT → STOP_CONFIRM → READY), po restartu z chyby a při prvním připojení aplikace (a vždy, když se Portenta mezitím restartovala – jiný `boot_id`):
 - řádky **Tlačítko STOP**, **Napájení PSU**, **Teploty** (zrno, vzduch, komín čtou platné hodnoty), **Měniče** (každý zvlášť: rozjezd na kontrolní rychlost a zastavení), vedle každého ✓ / ✗ (během kontroly kolečko),
 - aplikace nic nespouští, jen sleduje `status`; rozhoduje Portenta (při chybě přejde do `HALTED`, dialog ukáže, co selhalo),
+- **měniče** jsou ✓, když Portenta po kontrole (`PREFLIGHT` → `STOP_CONFIRM` → `READY`) pokračuje bez chyby; ✗ jen při chybě 10 (nerozjel se) nebo 14 (nezastavil) s označeným měničem. Aplikace nesmí rozhodovat podle toho, jestli sama zachytila rozjetý měnič – `status` chodí jen 2× za sekundu a kontrolní rozjezd je krátký,
 - po skončení musí obsluha kliknout **OK**; během kontroly je OK neaktivní,
 - připojí-li se aplikace k Portentě, která už je připravená, otáčení měničů se neopakuje – kontroluje se jen, že vstupy, teploty a měniče odpovídají,
 - za ohřevu (návrat po výpadku WiFi) se dialog neukazuje.
 
-**Blikající okraj:** u výzev, které vyžadují obsluhu u pražičky (předehřev hotový – nasyp zrno, připraveno k vysypání), bliká **zelený okraj celé aplikace**, dokud výzva svítí. Dotyky nepřebírá.
+**Blikání celé obrazovky:** u výzev, které vyžadují obsluhu u pražičky (předehřev hotový – nasyp zrno, připraveno k vysypání), **bliká celá obrazovka poloprůhlednou zelenou** (zhruba 1× za sekundu, střídavě silný zelený závoj a nic). Okno výzvy je **nad** závojem a nebliká, aby šlo číst. Tlačítko STOP ohřevu v liště zůstává vidět a funguje; závoj dotyky nepřebírá. Bliká, dokud obsluha nepotvrdí akci (Vsypáno / Vysypáno) – zavření okna blikání nevypne.
 
 Levá lišta: **Pražení, Receptury, Záznamy, Nastavení** (v testovací variantě navíc **Test**) a dole červené **STOP ohřevu**. Kalibrace PID a Diagnostika jsou v Nastavení.
 
@@ -83,7 +84,8 @@ Rozdělená na tři části:
 - Pokud firmware ještě neumí PID (`pid` chybí v `caps`), dialog cílovou teplotu nenabízí a upozorní, že pražení začne v ručním režimu.
 - Měniče: buben, odtah, míchač, ventilátor – příkaz a skutečná rychlost (%), Hz, chyba měniče. Rychlé volby 0 / 10 / … / 100 %.
 - Tlačítka událostí: Vsypání, Konec sušení, 1. crack start/konec, 2. crack, Vysypání.
-- Opakované zapálení (`reignite`), když plamen zhasne za provozu.
+- **Vysypání při ručním pražení** (po potvrzení): aplikace pošle `heat_stop` (hořák off, pražení končí), rozjede míchač a chladicí ventilátor na rychlosti z Nastavení (výchozí 60 % a 100 %), buben a odtah běží dál. Záznam pokračuje přes chlazení, tlačítko **Ukončit chlazení** zastaví míchač a ventilátor a záznam uloží. Omezení: chlazení řídí aplikace – při výpadku spojení Portenta po 15 s zastaví měniče (u receptury chlazení doběhne samo, API bod 5).
+- Opakované zapálení (`reignite`), když plamen zhasne za provozu. Během opakovaného zapálení zůstává `burner.flame` = 1 (API 8.2), aplikace ukazuje „ZAPALOVÁNÍ“ podle `burner.ignition` a událostí `ignition`, ne „nehoří“.
 
 **Vyzvání obsluhy**
 - Během předehřevu velký odpočet „Předehřev – zbývá mm:ss“ (receptura: `status.roast.preheat_left_s`), před dosažením teploty „Předehřev – ohřev na X °C“.
