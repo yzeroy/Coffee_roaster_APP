@@ -65,6 +65,7 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
         sp = s.ctrl.sp,
         vfd = s.vfd.map { it.pct },
         state = s.state.name,
+        vfdCmd = s.vfd.map { it.cmd },
     )
 
     private fun liveT(ms: Long) = if (liveStartMs < 0) 0.0 else (ms - liveStartMs) / 1000.0
@@ -251,31 +252,22 @@ object RecipeFromRecord {
         times.add(end.coerceAtLeast(tpT + 1))
         val curve = times.take(32).map { s -> CurvePoint(s, (at(charge + s).bt ?: chargeBt).coerceIn(50.0, 260.0)) }
 
-        // rozpis měničů z ručních změn (zaokrouhleno na 5 %)
-        fun q(v: Double?, min: Int): Int {
-            val x = ((v ?: 0.0) / 5.0).let { Math.round(it) * 5 }.toInt()
-            return when {
-                min > 0 -> x.coerceIn(min, 100)
-                x < 10 -> 0
-                else -> x.coerceAtMost(100)
-            }
-        }
-        val rows = ArrayList<VfdPoint>()
-        for (s in roast) {
-            val p = VfdPoint((s.t - charge).toInt(), q(s.vfd.getOrNull(0), 10), q(s.vfd.getOrNull(1), 10), q(s.vfd.getOrNull(2), 0), q(s.vfd.getOrNull(3), 0))
-            val last = rows.lastOrNull()
-            if (last == null) rows.add(p.copy(t = 0))
-            else if (p.values().zip(last.values()).any { (a, b) -> abs(a - b) >= 5 } && p.t > last.t + 10) rows.add(p)
-            if (rows.size >= 16) break
-        }
+        val rows = vfdRows(roast, charge)
+        // předehřev: cíl z nastavené teploty, výdrž od dosažení teploty do vsypání
+        val holdMark = r.marks.firstOrNull { it.event == "preheat_hold" && it.t <= charge }
+        val preheatS = holdMark?.let { (charge - it.t).toInt().coerceIn(0, 3600) } ?: 60
+        val preheatTarget = r.samples.lastOrNull { it.t <= charge && it.sp != null }?.sp
 
         val after = r.samples.filter { it.t > drop + 5 }
-        val cooler = after.mapNotNull { it.vfd.getOrNull(2) }.maxOrNull()?.let { q(it, 0) }?.takeIf { it > 0 } ?: 60
-        val fan = after.mapNotNull { it.vfd.getOrNull(3) }.maxOrNull()?.let { q(it, 0) }?.takeIf { it > 0 } ?: 100
+        fun coolPct(i: Int): Int? = after.mapNotNull { s -> (s.vfdCmd.getOrNull(i) ?: s.vfd.getOrNull(i)) }.maxOrNull()
+            ?.let { pct(it, allowZero = true) }?.takeIf { it > 0 }
+        val cooler = coolPct(2) ?: 60
+        val fan = coolPct(3) ?: 100
 
         val recipe = Recipe(
             name = name.take(32),
-            chargeBt = Math.round(chargeBt).toDouble(),
+            chargeBt = Math.round(preheatTarget ?: chargeBt).toDouble().coerceIn(50.0, 260.0),
+            preheatS = preheatS,
             chargeGas = Math.round(chargeGas).toDouble(),
             pidDelayS = tpT.coerceAtMost(curve.last().t),
             curve = curve,
@@ -287,5 +279,62 @@ object RecipeFromRecord {
             notes = "Vytvořeno ze záznamu ${r.id}",
         )
         return recipe
+    }
+
+    /** Procenta pro recepturu: celé číslo, buben a odtah 10–100, míchač a ventilátor 0 nebo 10–100. */
+    private fun pct(v: Double, allowZero: Boolean): Int {
+        val x = Math.round(v).toInt()
+        return if (allowZero) (if (x < 10) 0 else x.coerceAtMost(100)) else x.coerceIn(10, 100)
+    }
+
+    /**
+     * Rozpis měničů od vsypání. Přednostně z nastavených rychlostí (přesně: řádek v čase změny,
+     * přesná hodnota). Starší záznamy bez nich: ze skutečné rychlosti, ale jen ustálené – mezihodnoty
+     * rozjezdu se vynechají a řádek dostane čas začátku změny.
+     */
+    fun vfdRows(roast: List<Sample>, charge: Double): List<VfdPoint> {
+        fun row(t: Int, v: List<Double?>) = VfdPoint(
+            t,
+            pct(v.getOrNull(0) ?: 80.0, false), pct(v.getOrNull(1) ?: 80.0, false),
+            pct(v.getOrNull(2) ?: 0.0, true), pct(v.getOrNull(3) ?: 0.0, true),
+        )
+        val rows = ArrayList<VfdPoint>()
+        fun push(p: VfdPoint) {
+            val last = rows.lastOrNull()
+            when {
+                last == null -> rows.add(p.copy(t = 0))
+                p.values() == last.values() -> Unit
+                // dvě změny těsně po sobě (do 3 s) = jedna úprava obsluhy
+                p.t - last.t <= 3 && rows.size > 1 -> rows[rows.size - 1] = p.copy(t = last.t)
+                p.t <= last.t -> rows[rows.size - 1] = p.copy(t = last.t)
+                else -> rows.add(p)
+            }
+        }
+        val hasCmd = roast.isNotEmpty() && roast.all { it.vfdCmd.size >= 4 }
+        if (hasCmd) {
+            for (s in roast) push(row((s.t - charge).toInt(), s.vfdCmd))
+        } else {
+            // ustálená hodnota = stejná (±1 %) aspoň 3 s; čas = poslední ustálený vzorek před změnou
+            var changeStart: Double? = null
+            var prev: List<Int>? = null
+            var stableSince = 0.0
+            for (s in roast) {
+                val p = row((s.t - charge).toInt(), s.vfd)
+                val v = p.values()
+                if (prev == null || v.zip(prev).any { (a, b) -> kotlin.math.abs(a - b) > 1 }) {
+                    if (changeStart == null && prev != null) changeStart = s.t
+                    stableSince = s.t
+                    prev = v
+                    continue
+                }
+                if (s.t - stableSince >= 3.0) {
+                    val t = ((changeStart ?: s.t) - charge).toInt()
+                    push(p.copy(t = t.coerceAtLeast(0)))
+                    changeStart = null
+                }
+            }
+            if (rows.isEmpty() && roast.isNotEmpty()) push(row(0, roast.first().vfd))
+        }
+        return rows.take(16)
     }
 }

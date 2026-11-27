@@ -70,6 +70,8 @@ data class Sample(
     val sp: Double?,
     val vfd: List<Double?>,
     val state: String,
+    /** Nastavené (příkazové) rychlosti měničů – z nich se přesně sestaví rozpis receptury. Starší záznamy je nemají. */
+    val vfdCmd: List<Double?> = emptyList(),
 )
 
 data class Mark(val event: String, val t: Double, val bt: Double?, val text: String = "")
@@ -121,13 +123,14 @@ data class RoastRecord(
         putJsonArray("marks") {
             marks.forEach { m -> addJsonObject { put("event", m.event); put("t", m.t); put("bt", m.bt); put("text", m.text) } }
         }
-        // vzorky jako pole polí kvůli velikosti: t, bt, air, exh, ror, gas, sp, v0..v3, state
+        // vzorky jako pole polí kvůli velikosti: t, bt, air, exh, ror, gas, sp, v0..v3, state, c0..c3 (nastavené rychlosti)
         putJsonArray("samples") {
             samples.forEach { s ->
                 addJsonArray {
                     add(s.t); add(s.bt); add(s.air); add(s.exh); add(s.ror); add(s.gas); add(s.sp)
                     for (i in 0..3) add(s.vfd.getOrNull(i))
                     add(s.state)
+                    if (s.vfdCmd.isNotEmpty()) for (i in 0..3) add(s.vfdCmd.getOrNull(i))
                 }
             }
         }
@@ -161,6 +164,7 @@ data class RoastRecord(
                         gas = a[5].asDouble(), sp = a[6].asDouble(),
                         vfd = listOf(a[7].asDouble(), a[8].asDouble(), a[9].asDouble(), a[10].asDouble()),
                         state = a[11].asString() ?: "",
+                        vfdCmd = if (a.size >= 16) listOf(a[12].asDouble(), a[13].asDouble(), a[14].asDouble(), a[15].asDouble()) else emptyList(),
                     )
                 } ?: emptyList(),
             )

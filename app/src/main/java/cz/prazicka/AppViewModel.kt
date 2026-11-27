@@ -257,7 +257,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val err = RecipeValidator.validate(recipe.toApiJson())
         val saved = c.recipes.save(recipe)
         openRecipeId.value = saved.id
-        toast(if (err == null) "Receptura vytvořena" else "Receptura vytvořena – zkontroluj: ${err.msg}")
+        toast(
+            when {
+                err != null -> "Receptura vytvořena – zkontroluj: ${err.msg}"
+                r.chargeT == null -> "Receptura vytvořena, ale záznam nemá značku Vsypání – čas se počítá od začátku záznamu, zkontroluj ji"
+                else -> "Receptura vytvořena"
+            },
+        )
         onDone(saved.id)
     }
 
