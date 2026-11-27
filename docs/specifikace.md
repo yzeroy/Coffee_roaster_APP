@@ -219,6 +219,11 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
 - zrno se ohřívá z pokojové teploty; PID předehřevu a ladění musí cíl skutečně dosáhnout,
 - propad teploty zrna po vsypání.
 
+**Povolení nástrojů podle simulace ve firmwaru (API 1.8, bod 12.4)** – každý zvlášť:
+- simulace teplot (`sim_temp:true`): teploty, plamen, ztráta STOP/PSU, výpadek spojení,
+- simulace měničů (`sim_vfd:true`): poruchy měničů; bez ní (testovací firmware s emulátorem měničů na PC) se poruchy měničů vyvolávají v emulátoru,
+- zrušení všech poruch: aspoň jedna simulace.
+
 **Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen když Portenta v `hello_ack` hlásí `sim_vfd:true` a `sim_temp:true`**. Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
 
 Aplikace v `hello` posílá `"variant":"release"` nebo `"variant":"test"` (API bod 4.1). Firmware variantu jen zaznamená do logu a `diag`, žádná práva navíc nedává.

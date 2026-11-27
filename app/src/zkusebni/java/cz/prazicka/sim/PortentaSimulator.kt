@@ -29,7 +29,7 @@ import kotlin.math.min
 /**
  * Vestavěný simulátor Portenty pro testovací variantu aplikace.
  *
- * Mluví stejným protokolem jako firmware (API.md 1.7) a napodobuje stavový automat,
+ * Mluví stejným protokolem jako firmware (API.md 1.8) a napodobuje stavový automat,
  * měniče, hořák, jednoduchý tepelný model, PID, automatické ladění a receptury.
  * Neslouží k ověření firmwaru – jen k tomu, aby aplikace šla zkoušet bez desky.
  *

@@ -226,7 +226,7 @@ fun SettingsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
                 Panel(Modifier.fillMaxWidth()) {
                     SectionTitle("O aplikaci")
                     KeyValue("Aplikace", "${if (BuildConfig.IS_TEST) "Pražička TEST" else "Pražička"} ${BuildConfig.VERSION_NAME}")
-                    KeyValue("Protokol", "${Proto.VERSION} (API 1.7)")
+                    KeyValue("Protokol", "${Proto.VERSION} (API 1.8)")
                     KeyValue("Zdroj", "github.com/${BuildConfig.GITHUB_REPO}")
                 }
             }

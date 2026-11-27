@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,8 +66,11 @@ fun TestScreen(vm: AppViewModel) {
     val speed by Variant.simSpeed.collectAsState()
     val conn = link as? LinkState.Connected
     val builtIn = conn?.simulator == true
-    // nástroje ovlivňující pražičku: se simulátorem vždy, se skutečnou Portentou jen se zapnutou simulací
-    val affectAllowed = conn == null || builtIn || conn.hello.simEnabled
+    // Nástroje ovlivňující pražičku (API 1.8, bod 12.4) – každý podle své simulace ve firmwaru:
+    // teploty, plamen, vstupy 24 V a výpadek spojení jen se simulací teplot, poruchy měničů jen se simulací měničů.
+    val tempAllowed = conn == null || builtIn || conn.hello.simTemp
+    val vfdAllowed = conn == null || builtIn || conn.hello.simVfd
+    val resetAllowed = tempAllowed || vfdAllowed
     val sim = status?.sim
 
     Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -74,7 +78,9 @@ fun TestScreen(vm: AppViewModel) {
             Text("Test", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             when {
                 builtIn -> Chip("Vestavěný simulátor – vše povoleno", C.okText, C.okBg)
-                conn != null && conn.hello.simEnabled -> Chip("Portenta se simulací – povoleno", C.okText, C.okBg)
+                conn != null && conn.hello.simTemp && conn.hello.simVfd -> Chip("Portenta se simulací teplot i měničů – povoleno", C.okText, C.okBg)
+                conn != null && conn.hello.simTemp -> Chip("Simulace teplot – poruchy měničů vyvolej v emulátoru", C.warnText, C.warnBg)
+                conn != null && conn.hello.simVfd -> Chip("Jen simulace měničů – teploty, plamen a výpadek spojení vypnuty", C.warnText, C.warnBg)
                 conn != null -> Chip("Portenta BEZ simulace – nástroje ovlivňující pražičku vypnuty", C.dangerText, C.dangerBg)
                 else -> Chip("Nepřipojeno", C.muted, C.surface2)
             }
@@ -87,19 +93,19 @@ fun TestScreen(vm: AppViewModel) {
                 if (sim?.diLossPsu == true) add("Ztráta PSU")
             }
             active.take(4).forEach { Chip(it, C.warnText, border = C.warn) }
-            SecondaryButton("Zrušit všechny poruchy", { vm.cmd("sim_reset", "Poruchy zrušeny") }, enabled = affectAllowed)
+            SecondaryButton("Zrušit všechny poruchy", { vm.cmd("sim_reset", "Poruchy zrušeny") }, enabled = resetAllowed)
         }
 
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             // ---- simulace ve firmwaru
-            Panel(Modifier.width(420.dp).fillMaxHeight()) {
+            Panel(Modifier.weight(1.1f).widthIn(max = 440.dp).fillMaxHeight()) {
                 SectionTitle("Simulace ve firmwaru (sim_*)")
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Plamen", fontWeight = FontWeight.SemiBold, modifier = Modifier.width(90.dp))
                         Segmented(
                             listOf("ok" to "Normálně", "fail" to "Nechytí"), if (sim?.flameFails == true) "fail" else "ok",
-                            { v -> vm.cmd("sim_flame") { put("fails", v == "fail") } }, Modifier.weight(1f), enabled = affectAllowed,
+                            { v -> vm.cmd("sim_flame") { put("fails", v == "fail") } }, Modifier.weight(1f), enabled = tempAllowed,
                         )
                     }
                     Text("Teploty", fontWeight = FontWeight.SemiBold)
@@ -111,15 +117,16 @@ fun TestScreen(vm: AppViewModel) {
                             SecondaryButton("Podržet", {
                                 val c = parseNum(value)
                                 if (c == null) vm.toast("Zadej teplotu") else vm.cmd("sim_temp") { put("ch", ch); put("c", c); put("hold", true) }
-                            }, enabled = affectAllowed, height = 40.dp)
-                            SecondaryButton("Neplatná", { vm.cmd("sim_temp") { put("ch", ch); put("c", JsonNull); put("hold", true) } }, enabled = affectAllowed, height = 40.dp)
+                            }, enabled = tempAllowed, height = 40.dp)
+                            SecondaryButton("Neplatná", { vm.cmd("sim_temp") { put("ch", ch); put("c", JsonNull); put("hold", true) } }, enabled = tempAllowed, height = 40.dp)
                             SecondaryButton("Uvolnit", {
                                 val c = parseNum(value)
                                 vm.cmd("sim_temp") { put("ch", ch); if (c == null) put("c", JsonNull) else put("c", c); put("hold", false) }
-                            }, enabled = affectAllowed, height = 40.dp)
+                            }, enabled = tempAllowed, height = 40.dp)
                         }
                     }
                     Text("Měniče", fontWeight = FontWeight.SemiBold)
+                    if (!vfdAllowed) Label("Firmware nemá simulaci měničů – poruchy vyvolej v emulátoru měničů na PC (tools/vfd_emulator.py).")
                     Texts.vfdNames.forEachIndexed { i, name ->
                         val cur = sim?.vfdFault?.getOrNull(i) ?: "ok"
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -128,7 +135,7 @@ fun TestScreen(vm: AppViewModel) {
                                 listOf("ok" to "OK", "nostop" to "nestaví", "offline" to "offline", "err" to "chyba"),
                                 if (cur.startsWith("err")) "err" else cur,
                                 { f -> vm.cmd("sim_vfd") { put("vfd", i); put("fault", f); if (f == "err") put("code", 12) } },
-                                Modifier.weight(1f), enabled = affectAllowed, height = 34.dp,
+                                Modifier.weight(1f), enabled = vfdAllowed, height = 34.dp,
                             )
                         }
                     }
@@ -136,21 +143,21 @@ fun TestScreen(vm: AppViewModel) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val stopLoss = sim?.diLossStop == true
                         val psuLoss = sim?.diLossPsu == true
-                        SecondaryButton(if (stopLoss) "Vrátit STOP" else "Ztráta STOP", { vm.cmd("sim_di") { put("stop", stopLoss) } }, Modifier.weight(1f), enabled = affectAllowed)
-                        SecondaryButton(if (psuLoss) "Vrátit PSU" else "Ztráta PSU", { vm.cmd("sim_di") { put("psu", psuLoss) } }, Modifier.weight(1f), enabled = affectAllowed)
+                        SecondaryButton(if (stopLoss) "Vrátit STOP" else "Ztráta STOP", { vm.cmd("sim_di") { put("stop", stopLoss) } }, Modifier.weight(1f), enabled = tempAllowed)
+                        SecondaryButton(if (psuLoss) "Vrátit PSU" else "Ztráta PSU", { vm.cmd("sim_di") { put("psu", psuLoss) } }, Modifier.weight(1f), enabled = tempAllowed)
                     }
                     Label("Simulace umí 24 V jen odebrat, nikdy nahradit.")
                 }
             }
 
             // ---- simulace v aplikaci
-            Panel(Modifier.width(340.dp).fillMaxHeight()) {
+            Panel(Modifier.weight(0.9f).widthIn(max = 360.dp).fillMaxHeight()) {
                 SectionTitle("Simulace v aplikaci")
                 Label("Portenta je nerozliší od skutečnosti.")
                 Text("Výpadek spojení", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(5, 14, 20).forEach { sec ->
-                        SecondaryButton("$sec s", { vm.silence(sec) }, Modifier.weight(1f), enabled = affectAllowed, color = if (sec > 15) C.dangerText else C.text, border = if (sec > 15) C.danger else C.line)
+                        SecondaryButton("$sec s", { vm.silence(sec) }, Modifier.weight(1f), enabled = tempAllowed, color = if (sec > 15) C.dangerText else C.text, border = if (sec > 15) C.danger else C.line)
                     }
                 }
                 Label("Aplikace přestane posílat zprávy, spojení zůstane otevřené. Nad 15 s za ohřevu nastane panika (chyba 7).")
