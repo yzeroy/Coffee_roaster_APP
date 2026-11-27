@@ -2,6 +2,7 @@ name: Sestavení
 
 # Větev test → testovací varianta, větev main → provozní varianta.
 # Tag vX.Y.Z na main → stabilní vydání, tag vX.Y.Z-test.N na test → testovací vydání.
+# Commit do test se značkou [vydat] ve zprávě → testovací vydání automaticky (vX.Y.Z-test.<číslo běhu>).
 on:
   push:
     branches: [ test, main ]
@@ -43,6 +44,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
+      - name: Automatické testovací vydání ([vydat] ve zprávě commitu)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test' && contains(github.event.head_commit.message, '[vydat]')
+        run: |
+          BASE=$(sed -n 's/^val appVersionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+          V="$BASE-test.${{ github.run_number }}"
+          echo "APP_VERSION=$V" >> "$GITHUB_ENV"
+          echo "AUTO_TAG=v$V" >> "$GITHUB_ENV"
+
       - name: Podpisový klíč (jen když je nastavený v Secrets)
         env:
           KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
@@ -78,12 +87,12 @@ jobs:
           name: prazicka-${{ steps.varianta.outputs.dir }}-${{ github.run_number }}
           path: app/build/outputs/apk/${{ steps.varianta.outputs.dir }}/release/*.apk
 
-      - name: Vydání na GitHubu (jen pro tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Vydání na GitHubu (tag nebo [vydat])
+        if: startsWith(github.ref, 'refs/tags/v') || env.AUTO_TAG != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
+          TAG="${AUTO_TAG:-${GITHUB_REF#refs/tags/}}"
           APK=$(ls app/build/outputs/apk/${{ steps.varianta.outputs.dir }}/release/*.apk | head -1)
           cp "$APK" "prazicka-$TAG.apk"
           if [[ "$TAG" == *-test.* ]]; then PRE="--prerelease"; else PRE=""; fi
@@ -91,5 +100,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "prazicka-$TAG.apk" --clobber
           else
-            gh release create "$TAG" "prazicka-$TAG.apk" --title "$TAG" --generate-notes $PRE
+            gh release create "$TAG" "prazicka-$TAG.apk" --title "$TAG" --target "$GITHUB_SHA" --generate-notes $PRE
           fi

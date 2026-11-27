@@ -267,6 +267,11 @@ private fun LegendItem(color: Color, label: String, h: Dp = 3.dp) {
 private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
     Panel(modifier.verticalScroll(rememberScrollState())) {
         Label("ZRNO")
+        // požadovaná teplota malým písmem nad aktuální
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("požadovaná", color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 2.dp))
+            Text(if (s?.ctrl?.sp == null) "—" else "${fmt1(s?.ctrl?.sp)} °C", fontFamily = Mono, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.sp)
+        }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(fmt1(s?.temps?.bt), fontFamily = Mono, fontSize = 46.sp, fontWeight = FontWeight.SemiBold, color = C.bt, maxLines = 1)
             Text("°C", color = C.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 10.dp))
@@ -281,7 +286,6 @@ private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
             Text(" °C/min", color = C.muted, fontSize = 12.sp)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ValueBox("Cíl", fmt1(s?.ctrl?.sp), Modifier.weight(1f))
             ValueBox("Plyn", if (s?.burner?.power == true) fmt0(s?.burner?.gas) + " %" else "—", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -298,9 +302,6 @@ private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
             )
         }
         SecondaryButton("Znovu zapálit", { vm.reignite() }, Modifier.fillMaxWidth(), enabled = s?.state == RoasterState.RUNNING, height = 40.dp)
-        s?.roast?.let { r ->
-            if (r.running) KeyValue("Fáze", Texts.phase(r.phase))
-        }
     }
 }
 
@@ -495,7 +496,18 @@ private fun EventsCard(
     val idle = s == null || (!s.state.heating && roast?.phase != "cooling" && !coolingManual)
 
     Panel(modifier, padding = 12.dp) {
-        SectionTitle(if (idle) "Spustit" else "Události")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionTitle(if (idle) "Spustit" else "Události")
+            Spacer1()
+            // fáze pražení – tady je víc vidět než pod tlačítkem Znovu zapálit
+            val phaseText = when {
+                roast != null && roast.running -> Texts.phase(roast.phase)
+                coolingManual -> "Chlazení"
+                s != null && s.state.heating -> if (doneMarks.contains("charge")) "Pražení" else "Předehřev"
+                else -> null
+            }
+            if (phaseText != null) Chip("Fáze: $phaseText", C.btSoft, C.heatBg)
+        }
         when {
             !connected -> {
                 Text("Bez spojení s Portentou. Receptury, záznamy a nastavení fungují i tak.", color = C.muted)

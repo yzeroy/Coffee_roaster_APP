@@ -35,6 +35,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -214,7 +219,7 @@ private fun RecipeEditor(
                 Field(d.pidDelay, { set(d.copy(pidDelay = it)) }, "PID převezme po", Modifier.weight(1f), mono = true)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Panel(Modifier.weight(1f).height(300.dp)) {
+                Panel(Modifier.weight(1f).height(330.dp)) {
                     SectionTitle("Křivka teploty zrna")
                     CurvePreview(recipe, Modifier.weight(1f).fillMaxWidth())
                 }
@@ -319,28 +324,55 @@ private fun RemoveBtn(enabled: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun CurvePreview(r: Recipe?, modifier: Modifier) {
-    Canvas(modifier) {
-        val left = 10f
-        val right = size.width - 10f
-        val top = 10f
-        val bottom = size.height - 10f
-        val tMax = maxOf(720.0, ((r?.dropTMax ?: 720) + 60).toDouble())
-        fun x(t: Double) = left + (t / tMax).toFloat() * (right - left)
-        fun y(v: Double) = top + (1f - ((v.coerceIn(50.0, 260.0) - 50.0) / 210.0).toFloat()) * (bottom - top)
-        var g = 50.0
-        while (g <= 250.0) { drawLine(C.surface3, Offset(left, y(g)), Offset(right, y(g)), 1f); g += 50.0 }
-        var t = 0.0
-        while (t <= tMax) { drawLine(C.surface3, Offset(x(t), top), Offset(x(t), bottom), 1f); t += 120.0 }
-        if (r == null || r.curve.size < 2) return@Canvas
-        drawRect(C.gas.copy(alpha = 0.12f), Offset(x(0.0), top), androidx.compose.ui.geometry.Size(x(r.pidDelayS.toDouble()) - x(0.0), bottom - top))
-        drawLine(C.faint, Offset(left, y(r.dropBt)), Offset(right, y(r.dropBt)), 1.5f)
-        val p = Path()
-        r.curve.forEachIndexed { i, c -> if (i == 0) p.moveTo(x(c.t.toDouble()), y(c.bt)) else p.lineTo(x(c.t.toDouble()), y(c.bt)) }
-        p.lineTo(x(tMax), y(r.curve.last().bt))
-        drawPath(p, C.bt, style = Stroke(width = 5f))
-        r.curve.forEach { c ->
-            drawCircle(C.bg, 9f, Offset(x(c.t.toDouble()), y(c.bt)))
-            drawCircle(C.bt, 9f, Offset(x(c.t.toDouble()), y(c.bt)), style = Stroke(4f))
+    val tm = rememberTextMeasurer()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // legenda
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(16.dp).height(3.dp).background(C.bt)); Text("Křivka zrna", color = C.muted, fontSize = 11.sp)
+            Box(Modifier.width(16.dp).height(2.dp).background(C.faint)); Text("Vysypání", color = C.muted, fontSize = 11.sp)
+            Box(Modifier.width(16.dp).height(10.dp).background(C.gas.copy(alpha = 0.25f))); Text("Pevný plyn do převzetí PID", color = C.muted, fontSize = 11.sp)
+        }
+        Canvas(Modifier.weight(1f).fillMaxWidth()) {
+            val label = TextStyle(color = C.muted, fontSize = 10.sp)
+            val left = 34.dp.toPx()
+            val right = size.width - 8.dp.toPx()
+            val top = 8.dp.toPx()
+            val bottom = size.height - 30.dp.toPx()
+            if (right <= left || bottom <= top) return@Canvas
+            val tMax = maxOf(720.0, ((r?.dropTMax ?: 720) + 60).toDouble())
+            fun x(t: Double) = left + (t / tMax).toFloat() * (right - left)
+            fun y(v: Double) = top + (1f - ((v.coerceIn(50.0, 260.0) - 50.0) / 210.0).toFloat()) * (bottom - top)
+            // osa Y: teplota zrna
+            var g = 50.0
+            while (g <= 250.0) {
+                drawLine(C.surface3, Offset(left, y(g)), Offset(right, y(g)), 1f)
+                drawText(tm, g.toInt().toString(), Offset(2f, y(g) - 7.dp.toPx()), label)
+                g += 50.0
+            }
+            // osa X: čas od vsypání (min)
+            val step = if (tMax > 1200) 240.0 else 120.0
+            var t = 0.0
+            while (t <= tMax) {
+                drawLine(C.surface3, Offset(x(t), top), Offset(x(t), bottom), 1f)
+                drawText(tm, (t / 60).toInt().toString(), Offset(x(t) - 3.dp.toPx(), bottom + 2.dp.toPx()), label)
+                t += step
+            }
+            drawText(tm, "°C", Offset(2f, bottom + 2.dp.toPx()), label)
+            drawText(tm, "čas od vsypání (min)", Offset((left + right) / 2 - 50.dp.toPx(), bottom + 15.dp.toPx()), label)
+            if (r == null || r.curve.size < 2) return@Canvas
+            val pidX = x(r.pidDelayS.toDouble())
+            drawRect(C.gas.copy(alpha = 0.18f), Offset(x(0.0), top), Size(pidX - x(0.0), bottom - top))
+            drawText(tm, "PID od ${mmss(r.pidDelayS.toDouble())}", Offset(pidX + 3.dp.toPx(), bottom - 16.dp.toPx()), label)
+            drawLine(C.faint, Offset(left, y(r.dropBt)), Offset(right, y(r.dropBt)), 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+            drawText(tm, "vysypání ${r.dropBt.toInt()} °C", Offset(right - 110.dp.toPx(), y(r.dropBt) - 16.dp.toPx()), label)
+            val p = Path()
+            r.curve.forEachIndexed { i, c -> if (i == 0) p.moveTo(x(c.t.toDouble()), y(c.bt)) else p.lineTo(x(c.t.toDouble()), y(c.bt)) }
+            p.lineTo(x(tMax), y(r.curve.last().bt))
+            drawPath(p, C.bt, style = Stroke(width = 5f))
+            r.curve.forEach { c ->
+                drawCircle(C.bg, 9f, Offset(x(c.t.toDouble()), y(c.bt)))
+                drawCircle(C.bt, 9f, Offset(x(c.t.toDouble()), y(c.bt)), style = Stroke(4f))
+            }
         }
     }
 }

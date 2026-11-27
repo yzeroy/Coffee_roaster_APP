@@ -61,3 +61,9 @@ Předpoklad: podpisový klíč je v GitHub Secrets (`SIGNING_KEYSTORE_B64`, `SIG
 5. V aplikaci Nastavení → Aktualizace → „Zkontrolovat“ → nabídne `0.1.0-test.2` → Stáhnout a nainstalovat. Android napoprvé požádá o povolení „Instalovat neznámé aplikace“ pro Pražička TEST, pak instalaci potvrdit. Data aplikace (receptury, záznamy, nastavení) zůstanou.
 
 Pozor: APK z běžného sestavení (artefakt z Actions, ne z vydání) má verzi `0.1.0-test.<číslo běhu>`. Kontrola aktualizací porovnává tato čísla s tagy, takže pro zkoušení aktualizací instalovat jen APK z vydání (Releases).
+
+## Automatické testovací vydání
+
+Commit do `test`, který má ve zprávě značku `[vydat]`, vydá GitHub Actions sám: po úspěšném sestavení vytvoří pre-release `v<verze>-test.<číslo běhu>` (např. `v0.1.0-test.31`) s podepsaným APK. Tablet ho najde přes Nastavení → Zkontrolovat teď. Ruční zakládání vydání na GitHubu tak není potřeba.
+
+Číslo za `-test.` je číslo běhu GitHub Actions, takže vždy roste. Kdyby se vydání zakládalo i ručně, musí mít vyšší číslo než poslední automatické, jinak ho aplikace nebude brát jako novější.
