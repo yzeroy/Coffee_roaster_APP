@@ -183,6 +183,15 @@ Podle API (body 4 a 5):
 - **Za ohřevu se aktualizace nenabízí ani neinstaluje.**
 - Postup, jak aktualizaci vyzkoušet, je v `docs/vetve_a_vydavani.md` (Vyzkoušení aktualizace z GitHubu).
 
+## 7a. Aktualizace firmwaru Portenty (plánováno, čeká na API – bod 15.1)
+
+- **Provozní aplikace nese firmware**, se kterým k sobě patří (verze, SHA-256, bez simulace). Hotový soubor dodá chat firmwaru do repozitáře aplikace do složky `firmware/` (soubor + popis), sestavení aplikace ho přibalí do APK.
+- Po připojení aplikace porovná verzi v Portentě (`hello_ack.fw`) s přibalenou. Je-li přibalená novější, nabídne „V Portentě je X, s aplikací přišel Y. Nahrát?“. **Nikdy nenahrává bez potvrzení.** Stejná nebo novější verze v Portentě → nic nenabízí; ruční nahrání přibaleného firmwaru zůstává v Diagnostice.
+- **Testovací aplikace firmware nenese**, umožňuje ručně nahrát soubor vybraný v tabletu (Diagnostika → Nahrát firmware ze souboru).
+- Nahrávat jde jen ve stavu Připraveno (hořák vypnutý, měniče stojí, neběží receptura ani ladění). Průběh v procentech, po přenosu kontrola SHA-256, restart Portenty až po potvrzení, po restartu aplikace ověří novou verzi.
+- Provozní aplikace nikdy nenahraje firmware se simulací.
+- **Předpoklad:** token už není zkompilovaný ve firmwaru (APK je veřejné), Portenta ho drží v trvalé paměti; nastavení přes USB konzoli nebo z aplikace (`token_set`).
+
 ## 8. Testovací varianta
 
 Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
