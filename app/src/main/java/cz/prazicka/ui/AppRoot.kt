@@ -6,6 +6,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -79,7 +82,9 @@ fun AppRoot(vm: AppViewModel) {
     val pulse = if (attention) rememberPulse() else null
     val tint: () -> Float = { pulse?.value ?: 0f }
 
-    Box(Modifier.fillMaxSize().background(C.bg)) {
+    val settings by vm.settings.collectAsState()
+    // Android 15 kreslí aplikaci až pod systémové lišty – odsadit od nich a dole přidat pás
+    Box(Modifier.fillMaxSize().background(C.surface).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = settings.bottomBand.dp).background(C.bg)) {
         Column(Modifier.fillMaxSize()) {
             if (BuildConfig.IS_TEST) Box { TestBar(vm); TintLayer(tint, Modifier.matchParentSize()) }
             Row(Modifier.weight(1f).fillMaxWidth()) {

@@ -186,7 +186,12 @@ fun SettingsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
                         listOf(90, 100, 110, 120).map { it.toString() to "$it %" }, settings.uiScale.toString(),
                         { v -> vm.updateSettings { it.copy(uiScale = v.toInt()) } }, Modifier.fillMaxWidth(),
                     )
-                    Label("Rozvržení se přizpůsobí obrazovce samo, velikostí jde doladit.")
+                    Label("Spodní okraj (pás pod aplikací)", size = 13.sp)
+                    Segmented(
+                        listOf(0, 16, 32, 48).map { it.toString() to if (it == 0) "žádný" else "$it dp" }, settings.bottomBand.toString(),
+                        { v -> vm.updateSettings { it.copy(bottomBand = v.toInt()) } }, Modifier.fillMaxWidth(),
+                    )
+                    Label("Rozvržení se přizpůsobí obrazovce samo, velikostí a okrajem jde doladit.")
                 }
                 Panel(Modifier.fillMaxWidth()) {
                     SectionTitle("Pražení a výzvy")

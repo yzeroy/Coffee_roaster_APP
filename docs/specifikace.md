@@ -35,6 +35,7 @@ Když se tato specifikace a API rozcházejí, platí API. Změna rozhraní = nej
   - nic nesmí přesahovat okraj obrazovky; když se obsah nevejde, část se posouvá, nikdy se neořízne,
   - tlačítka zůstávají aspoň 48 dp vysoká (dotyk v rukavici),
   - **Velikost rozhraní** v Nastavení: 90 / 100 / 110 / 120 % – zvětší nebo zmenší všechna písma a prvky najednou, pro jemné doladění na konkrétním tabletu.
+  - aplikace se odsadí od systémových lišt Androidu (stavová a navigační lišta) a dole má **pás** (Nastavení → Spodní okraj: žádný / 16 / 32 / 48 dp, výchozí 16), aby ovládání nebylo až u hrany displeje,
 
 ## 4. Obrazovky
 

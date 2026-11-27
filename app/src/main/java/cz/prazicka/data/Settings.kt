@@ -36,6 +36,8 @@ data class AppSettings(
     /** Chlazení po vysypání při ručním pražení (%), míchač a chladicí ventilátor. */
     val manualCooler: Int = 60,
     val manualCoolfan: Int = 100,
+    /** Pás na spodním okraji obrazovky (dp) – aby ovládání nebylo až u hrany displeje. */
+    val bottomBand: Int = 16,
 )
 
 /** Nastavení aplikace. Token se ukládá zvlášť, šifrovaný klíčem v Android Keystore. */
@@ -63,6 +65,7 @@ class SettingsStore(context: Context) {
         uiScale = prefs.getInt("ui_scale", 100).coerceIn(90, 120),
         manualCooler = prefs.getInt("manual_cooler", 60),
         manualCoolfan = prefs.getInt("manual_coolfan", 100),
+        bottomBand = prefs.getInt("bottom_band", 16),
     )
 
     fun update(f: (AppSettings) -> AppSettings) {
@@ -84,6 +87,7 @@ class SettingsStore(context: Context) {
             .putInt("ui_scale", s.uiScale)
             .putInt("manual_cooler", s.manualCooler)
             .putInt("manual_coolfan", s.manualCoolfan)
+            .putInt("bottom_band", s.bottomBand)
             .apply()
         _settings.value = s
     }

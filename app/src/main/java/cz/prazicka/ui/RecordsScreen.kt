@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -111,7 +112,9 @@ private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit,
     var recipeName by remember(r.id) { mutableStateOf(r.title.take(32)) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    BoxWithConstraints(modifier) {
+    val bottomH = (maxHeight * 0.42f).coerceIn(220.dp, 300.dp)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(r.title + if (r.manual) " · ruční pražení" else "", fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -123,7 +126,7 @@ private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit,
         Panel(Modifier.weight(1f).fillMaxWidth()) {
             RoastGraph(r.samples, r.marks, r.chargeT, Modifier.fillMaxSize(), minSpan = 600.0)
         }
-        Row(Modifier.height(250.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.height(bottomH), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Panel(Modifier.weight(1f).fillMaxHeight()) {
                 SectionTitle("Události a poznámky")
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -162,6 +165,7 @@ private fun RecordDetail(vm: AppViewModel, r: RoastRecord, go: (Screen) -> Unit,
                 }, Modifier.fillMaxWidth(), container = C.bt, enabled = r.samples.size >= 20)
             }
         }
+    }
     }
     if (confirmDelete) {
         AlertDialog(
