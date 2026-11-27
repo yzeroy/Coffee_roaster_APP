@@ -224,7 +224,7 @@ Aplikace existuje ve dvou variantách, které se dají nainstalovat vedle sebe:
 - simulace měničů (`sim_vfd:true`): poruchy měničů; bez ní (testovací firmware s emulátorem měničů na PC) se poruchy měničů vyvolávají v emulátoru,
 - zrušení všech poruch: aspoň jedna simulace.
 
-**Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen když Portenta v `hello_ack` hlásí `sim_vfd:true` a `sim_temp:true`**. Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
+**Ochrana před použitím na skutečné pražičce:** testovací nástroje, které ovlivňují pražičku (simulace výpadku spojení, `sim_*`), jsou povolené **jen podle simulace, kterou Portenta hlásí v `hello_ack`** (viz výše). Proti firmwaru bez simulace funguje testovací varianta jako provozní, jen s pruhem „TEST“.
 
 Aplikace v `hello` posílá `"variant":"release"` nebo `"variant":"test"` (API bod 4.1). Firmware variantu jen zaznamená do logu a `diag`, žádná práva navíc nedává.
 
