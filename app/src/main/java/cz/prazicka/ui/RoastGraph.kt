@@ -191,9 +191,10 @@ private fun DrawScope.series(
     val p = Path()
     var penDown = false
     var lastT = Double.NaN
+    val gapLimit = gapLimit(samples)
     for (s in samples) {
         val v = value(s)
-        val gap = !lastT.isNaN() && s.t - lastT > 3.0
+        val gap = !lastT.isNaN() && s.t - lastT > gapLimit
         if (v == null || gap) penDown = false
         if (v != null) {
             val px = x(s.t - origin)
@@ -207,4 +208,16 @@ private fun DrawScope.series(
         p, color,
         style = Stroke(width = width, pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(14f, 10f)) else null),
     )
+}
+
+/**
+ * Mezera v záznamu (výpadek spojení): víc než 3 s, nebo víc než 4× obvyklý rozestup vzorků.
+ * Zrychlená simulace posílá vzorky po delším simulovaném čase – to mezera není.
+ */
+private fun gapLimit(samples: List<Sample>): Double {
+    if (samples.size < 3) return 3.0
+    val from = maxOf(1, samples.size - 60)
+    val d = (from until samples.size).map { samples[it].t - samples[it - 1].t }.filter { it > 0 }.sorted()
+    if (d.isEmpty()) return 3.0
+    return maxOf(3.0, d[d.size / 2] * 4.0)
 }

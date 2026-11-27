@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,6 +66,7 @@ fun RoastScreen(vm: AppViewModel, go: (Screen) -> Unit) {
     val live by vm.live.collectAsState()
     val liveMarks by vm.liveMarks.collectAsState()
     val preheat by vm.manualPreheat.collectAsState()
+    val manualCooling by vm.manualCooling.collectAsState()
     val portentaRecipeJson by vm.portentaRecipe.collectAsState()
     val settings by vm.settings.collectAsState()
     val connected = link is LinkState.Connected
@@ -78,7 +83,7 @@ fun RoastScreen(vm: AppViewModel, go: (Screen) -> Unit) {
         val valuesW = (maxWidth * 0.22f).coerceIn(190.dp, 290.dp)
         val bottomH = (maxHeight * 0.3f).coerceIn(176.dp, 236.dp)
         Column(Modifier.fillMaxSize().padding(if (compact) 10.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
-            Header(vm, s, link, record != null, preheat, compact)
+            Header(vm, s, link, record != null, preheat, compact, manualCooling)
 
             Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 // graf
@@ -113,7 +118,7 @@ fun RoastScreen(vm: AppViewModel, go: (Screen) -> Unit) {
             Row(Modifier.height(bottomH).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                 FlameCard(vm, s, settings.lastManualSp, Modifier.weight(1f).widthIn(max = 380.dp).fillMaxHeight())
                 VfdCard(vm, s, Modifier.weight(1f).widthIn(max = 380.dp).fillMaxHeight())
-                EventsCard(vm, s, connected, (record?.marks ?: liveMarks).map { it.event }, portentaRecipe, onManualStart = { showStart = true }, go = go, modifier = Modifier.weight(1.3f).fillMaxHeight())
+                EventsCard(vm, s, connected, (record?.marks ?: liveMarks).map { it.event }, portentaRecipe, manualCooling, onManualStart = { showStart = true }, go = go, modifier = Modifier.weight(1.3f).fillMaxHeight())
             }
         }
     }
@@ -135,20 +140,21 @@ fun RoastScreen(vm: AppViewModel, go: (Screen) -> Unit) {
                         " Na pražičku to nemá žádný vliv.",
                 )
             },
-            confirmButton = { TextButton(onClick = { confirmReset = false; vm.resetGraph() }) { Text("Resetovat", color = C.bt, fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Zrušit", color = C.muted) } },
+            // ochrana proti náhodnému dotyku: tlačítko je potřeba držet 2 s
+            confirmButton = { HoldButton("Podrž 2 s – resetovat") { confirmReset = false; vm.resetGraph() } },
+            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Zrušit", color = C.text, fontWeight = FontWeight.Bold) } },
         )
     }
 }
 
 @Composable
-private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boolean, preheat: cz.prazicka.data.ManualPreheat.Ui?, compact: Boolean) {
+private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boolean, preheat: cz.prazicka.data.ManualPreheat.Ui?, compact: Boolean, manualCooling: Boolean) {
     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         val (label, bg, fg) = when {
             s == null -> Triple("Nepřipojeno", C.surface2, C.muted)
             s.state == RoasterState.HALTED -> Triple("Chyba", C.stop, Color.White)
             s.roast?.phase == "preheat" -> Triple("Předehřev", C.heatBg, C.btSoft)
-            s.roast?.phase == "cooling" -> Triple("Chlazení", C.coolBg, C.air)
+            s.roast?.phase == "cooling" || (manualCooling && !s.state.heating) -> Triple("Chlazení", C.coolBg, C.air)
             s.state == RoasterState.RUNNING -> Triple("Pražení", C.bt, C.bg)
             s.state.heating -> Triple(s.state.label, C.heatBg, C.btSoft)
             s.state == RoasterState.READY -> Triple("Připraveno", C.okBg, C.okText)
@@ -196,7 +202,7 @@ private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boo
         } else {
             Text(if (t != null) mmss(t) else "—", fontFamily = Mono, fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
         }
-        if (s != null && s.state.heating && s.roast?.running != true) {
+        if (s != null && (s.state.heating || manualCooling) && s.roast?.running != true) {
             if (recording) Chip("● Záznam", C.recFg, border = C.recBorder)
             else Box(Modifier.clickable { vm.startRecordingNow() }) { Chip("Bez záznamu · zapnout", C.muted, border = C.line) }
         }
@@ -214,10 +220,14 @@ private fun Header(vm: AppViewModel, s: Status?, link: LinkState, recording: Boo
         if (s != null) {
             Chip(if (s.stop) "STOP OK" else "STOP!", if (s.stop) C.okText else C.dangerText, if (s.stop) C.okBg else C.dangerBg)
             Chip(if (s.psu) "PSU OK" else "PSU!", if (s.psu) C.okText else C.dangerText, if (s.psu) C.okBg else C.dangerBg)
-            val (ft, ffg, fbg) = when (s.burner.flame) {
+            val igniting = s.burner.ignition || s.state == RoasterState.IGNITION_SEQUENCE
+            val (ft, ffg, fbg) = when {
+                igniting -> Triple("ZAPALOVÁNÍ", C.warnText, C.warnBg)
+                else -> when (s.burner.flame) {
                 1 -> Triple(if (compact) "PLAMEN" else "PLAMEN OK", C.okText, C.okBg)
                 2 -> Triple("PLAMEN NOK", C.dangerText, C.dangerBg)
                 else -> Triple("PLAMEN VYP", C.muted, C.surface2)
+                }
             }
             Chip(ft, ffg, fbg)
             if (s.sim != null) Chip(if (compact) "SIM" else "SIMULACE", C.warn, border = C.warn)
@@ -282,7 +292,7 @@ private fun ValuesPanel(vm: AppViewModel, s: Status?, modifier: Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Plamen ", color = C.muted, fontSize = 13.sp)
             Text(
-                when (s?.burner?.flame) { 1 -> "hoří"; 2 -> "selhal"; else -> "nehoří" },
+                if (s?.burner?.ignition == true) "zapaluje se" else when (s?.burner?.flame) { 1 -> "hoří"; 2 -> "selhal"; else -> "nehoří" },
                 color = when (s?.burner?.flame) { 1 -> C.okText; 2 -> C.dangerText; else -> C.muted },
                 fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
             )
@@ -473,6 +483,7 @@ private fun EventsCard(
     connected: Boolean,
     doneMarks: List<String>,
     portentaRecipe: Recipe?,
+    manualCooling: Boolean,
     onManualStart: () -> Unit,
     go: (Screen) -> Unit,
     modifier: Modifier,
@@ -480,7 +491,8 @@ private fun EventsCard(
     var confirmDrop by remember { mutableStateOf(false) }
     var noteOpen by remember { mutableStateOf(false) }
     val roast = s?.roast
-    val idle = s == null || (!s.state.heating && roast?.phase != "cooling")
+    val coolingManual = manualCooling && s != null && !s.state.heating && roast?.running != true
+    val idle = s == null || (!s.state.heating && roast?.phase != "cooling" && !coolingManual)
 
     Panel(modifier, padding = 12.dp) {
         SectionTitle(if (idle) "Spustit" else "Události")
@@ -492,6 +504,11 @@ private fun EventsCard(
             s != null && s.heatBlocked && s.state == RoasterState.READY -> {
                 Text("Po restartu z chyby je ohřev zablokovaný. Potvrď, že je pražička v pořádku.", color = C.warnText)
                 PrimaryButton("Odblokovat ohřev", { vm.heatStop() }, Modifier.fillMaxWidth(), container = C.warn)
+            }
+            coolingManual -> {
+                Text("Chlazení po ručním pražení. Hořák je vypnutý, míchač a ventilátor běží, buben a odtah také.", color = C.sp)
+                Text("Chlazení řídí aplikace – při výpadku spojení ho Portenta po 15 s zastaví.", color = C.muted, fontSize = 12.sp)
+                PrimaryButton("Ukončit chlazení", { vm.endManualCooling() }, Modifier.fillMaxWidth())
             }
             roast?.phase == "cooling" -> {
                 Text("Chlazení podle receptury. Míchač a ventilátor běží, hořák je vypnutý.", color = C.sp)
@@ -543,7 +560,7 @@ private fun EventsCard(
             text = {
                 Text(
                     if (recipe) "Portenta vypne hořák a spustí chlazení podle receptury."
-                    else "Značka se zapíše do záznamu. Hořák vypneš tlačítkem STOP ohřevu, chlazení řídíš měniči.",
+                    else "Hořák se vypne a pražení skončí. Míchač a chladicí ventilátor se rozjedou, buben a odtah poběží dál. Chlazení ukončíš tlačítkem.",
                 )
             },
             confirmButton = { TextButton(onClick = { confirmDrop = false; vm.roastMark("drop") }) { Text("Vysypáno", color = C.bt, fontWeight = FontWeight.Bold) } },
@@ -643,4 +660,35 @@ private fun BigStep(text: String, onClick: () -> Unit) {
             .border(1.dp, C.line, RoundedCornerShape(12.dp)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(text, fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+}
+
+/** Tlačítko, které provede akci až po podržení (ochrana proti náhodnému dotyku). */
+@Composable
+fun HoldButton(text: String, holdMs: Int = 2000, onDone: () -> Unit) {
+    var pressed by remember { mutableStateOf(false) }
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(pressed) {
+        if (pressed) {
+            progress.animateTo(1f, androidx.compose.animation.core.tween(((1f - progress.value) * holdMs).toInt(), easing = androidx.compose.animation.core.LinearEasing))
+            if (pressed) { pressed = false; progress.snapTo(0f); onDone() }
+        } else {
+            progress.animateTo(0f, androidx.compose.animation.core.tween(200))
+        }
+    }
+    Box(
+        Modifier.height(48.dp).widthIn(min = 200.dp).clip(RoundedCornerShape(10.dp)).background(C.surface3)
+            .border(1.dp, C.bt, RoundedCornerShape(10.dp))
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown()
+                    pressed = true
+                    waitForUpOrCancellation()
+                    pressed = false
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.value).background(C.bt.copy(alpha = 0.55f)))
+        Text(text, color = C.text, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 14.dp))
+    }
 }

@@ -111,11 +111,13 @@ class Selftest {
         else if (u.temps.check == Check.OK) u.temps
         else Item(Check.PENDING, "čeká na: ${missing.joinToString(", ")}")
 
+        // Rozjezd hodnotí Portenta: když z PREFLIGHT pokračuje dál bez chyby, všechny měniče se rozjely.
+        // (Aplikace nesmí soudit podle zachycených vzorků – status chodí jen 2× za sekundu.)
         if (st == RoasterState.PREFLIGHT) {
             vfdPhase[0] = "run"
-            for (i in 0..3) if ((s.vfd.getOrNull(i)?.pct ?: 0.0) >= 9.0) vfdSeen[i] = true
         } else if (st == RoasterState.STOP_CONFIRM && vfdPhase[0] == "run") {
             vfdPhase[0] = "stop"
+            vfdSeen.fill(true)
         }
         var each = List(4) { i -> if (vfdSeen[i]) Check.OK else Check.PENDING }
         var vfd = when (vfdPhase[0]) {

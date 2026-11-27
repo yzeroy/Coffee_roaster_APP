@@ -59,6 +59,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val currentRecord = c.recorder.current
     val live = c.recorder.live
     val liveMarks = c.recorder.liveMarks
+    val manualCooling = c.recorder.manualCooling
     val manualPreheat = c.preheat.ui
     val selftest = c.selftest.ui
 
@@ -133,6 +134,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Vysypání při ručním pražení: hořák off (pražení končí), míchač a chladicí ventilátor na rychlosti
+     * z Nastavení; buben a odtah běží dál. Chlazení řídí aplikace – při výpadku spojení ho Portenta po 15 s zastaví.
+     */
+    private fun manualDrop() = viewModelScope.launch {
+        val st = settings.value
+        c.preheat.cancel()
+        c.recorder.startManualCooling()
+        val r = client.command("heat_stop")
+        if (!r.ok) { toast(Texts.err(r.err, r.msg)); return@launch }
+        for ((i, pct) in listOf(2 to st.manualCooler, 3 to st.manualCoolfan)) {
+            val a = client.command("vfd_set") { put("vfd", i); put("pct", pct) }
+            if (!a.ok) toast("${Texts.vfdNames[i]}: ${Texts.err(a.err, a.msg)}")
+        }
+        toast("Vysypáno – hořák vypnut, chlazení běží")
+    }
+
+    fun endManualCooling() = viewModelScope.launch {
+        for (i in 2..3) client.command("vfd_set") { put("vfd", i); put("pct", 0) }
+        c.recorder.endManualCooling()
+        toast("Chlazení ukončeno, záznam uložen")
+    }
+
     fun resetGraph() {
         c.recorder.resetGraph()
         toast("Graf vynulován")
@@ -164,6 +188,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 c.preheat.charged()
             }
             if (!c.recorder.addLocalMark(event)) toast("Záznam neběží – značka je jen v grafu")
+            if (event == "drop") manualDrop()
         }
     }
 

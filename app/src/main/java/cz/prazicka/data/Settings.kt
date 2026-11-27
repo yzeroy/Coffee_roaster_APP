@@ -33,6 +33,9 @@ data class AppSettings(
     val theme: String = "dark",
     /** Velikost rozhraní v procentech (90–120). */
     val uiScale: Int = 100,
+    /** Chlazení po vysypání při ručním pražení (%), míchač a chladicí ventilátor. */
+    val manualCooler: Int = 60,
+    val manualCoolfan: Int = 100,
 )
 
 /** Nastavení aplikace. Token se ukládá zvlášť, šifrovaný klíčem v Android Keystore. */
@@ -58,6 +61,8 @@ class SettingsStore(context: Context) {
         lastManualPreheatMin = prefs.getInt("last_manual_preheat_min", 5),
         theme = prefs.getString("theme", "dark") ?: "dark",
         uiScale = prefs.getInt("ui_scale", 100).coerceIn(90, 120),
+        manualCooler = prefs.getInt("manual_cooler", 60),
+        manualCoolfan = prefs.getInt("manual_coolfan", 100),
     )
 
     fun update(f: (AppSettings) -> AppSettings) {
@@ -77,6 +82,8 @@ class SettingsStore(context: Context) {
             .putInt("last_manual_preheat_min", s.lastManualPreheatMin)
             .putString("theme", s.theme)
             .putInt("ui_scale", s.uiScale)
+            .putInt("manual_cooler", s.manualCooler)
+            .putInt("manual_coolfan", s.manualCoolfan)
             .apply()
         _settings.value = s
     }

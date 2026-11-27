@@ -46,6 +46,18 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
     var fw: String = ""
     private var wasHeating = false
 
+    /** Ruční pražení: po vysypání běží chlazení řízené aplikací – záznam pokračuje, dokud se neukončí. */
+    private val _manualCooling = MutableStateFlow(false)
+    val manualCooling: StateFlow<Boolean> = _manualCooling.asStateFlow()
+
+    fun startManualCooling() { _manualCooling.value = true }
+
+    /** Konec chlazení po ručním pražení – záznam se uloží. */
+    fun endManualCooling() {
+        _manualCooling.value = false
+        finish()
+    }
+
     private fun sampleOf(s: Status, t: Double) = Sample(
         t = t,
         bt = s.temps.bt, air = s.temps.air, exh = s.temps.exh, ror = s.temps.ror,
@@ -80,6 +92,7 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
         val heatingStarted = s.state.heating && !wasHeating
         wasHeating = s.state.heating
         if (rec == null) {
+            if (heatingStarted || s.state == RoasterState.HALTED) _manualCooling.value = false
             if (heatingStarted) {
                 val record = recipeActive || (nextManualChoice ?: defaultManual)
                 nextManualChoice = null
@@ -98,10 +111,13 @@ class Recorder(private val appVersion: String, private val onFinished: (RoastRec
             if (prevS == null || t - prevS.t >= 0.4 || prevS.state != s.state.name) {
                 _current.value = rec.copy(samples = rec.samples + sampleOf(s, t), gaps = rec.gaps + if (gap) 1 else 0)
             }
+            // nový ohřev, chyba nebo receptura ruší chlazení po ručním pražení
+            if (heatingStarted || s.state == RoasterState.HALTED || recipeActive) _manualCooling.value = false
             val end = when {
                 s.state == RoasterState.HALTED -> true
                 s.state.heating -> false
                 recipeActive -> false
+                _manualCooling.value -> false
                 else -> true
             }
             if (end) finish()

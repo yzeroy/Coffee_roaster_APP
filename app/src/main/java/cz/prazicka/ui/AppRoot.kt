@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.SideEffect
@@ -74,12 +75,18 @@ fun AppRoot(vm: AppViewModel) {
     val go: (Screen) -> Unit = { screen = it }
 
     var attention by remember { mutableStateOf(false) }
+    // blikání: jeden společný rytmus pro všechny vrstvy; čte se až při kreslení (žádné překreslování obsahu)
+    val pulse = if (attention) rememberPulse() else null
+    val tint: () -> Float = { pulse?.value ?: 0f }
 
     Box(Modifier.fillMaxSize().background(C.bg)) {
         Column(Modifier.fillMaxSize()) {
-            if (BuildConfig.IS_TEST) TestBar(vm)
+            if (BuildConfig.IS_TEST) Box { TestBar(vm); TintLayer(tint, Modifier.matchParentSize()) }
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                Rail(screen, go, onStop = { vm.heatStop() })
+                Box(Modifier.fillMaxHeight()) {
+                    Rail(screen, go, onStop = { vm.heatStop() })
+                    TintLayer(tint, Modifier.matchParentSize())
+                }
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (screen) {
                         Screen.Roast -> RoastScreen(vm, go)
@@ -90,11 +97,10 @@ fun AppRoot(vm: AppViewModel) {
                         Screen.Settings -> SettingsScreen(vm, go)
                         Screen.Test -> Variant.Screen(vm)
                     }
-                    Overlays(vm, go) { attention = it }
+                    Overlays(vm, go, tint) { attention = it }
                 }
             }
         }
-        if (attention) AttentionFrame()
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp).widthIn(max = 640.dp))
     }
 }
@@ -115,15 +121,32 @@ private fun SubScreen(title: String, back: () -> Unit, content: @Composable () -
     }
 }
 
-/** Blikající zelený okraj celé aplikace – upoutá pozornost u výzev (vsyp zrno, vysyp). Dotyky nepřebírá. */
+/** Rytmus blikání: 0 → 1 → 0 zhruba 1× za sekundu. */
 @Composable
-private fun AttentionFrame() {
+private fun rememberPulse(): androidx.compose.runtime.State<Float> {
     val tr = rememberInfiniteTransition(label = "blik")
-    val a by tr.animateFloat(
-        initialValue = 1f, targetValue = 0.1f,
-        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse), label = "alfa",
+    return tr.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse), label = "puls",
     )
-    Box(Modifier.fillMaxSize().border(10.dp, C.ok.copy(alpha = a)))
+}
+
+/**
+ * Poloprůhledný zelený závoj přes celou plochu, bliká v rytmu [tint] (0 = nic). Dotyky nepřebírá,
+ * takže STOP ohřevu i ostatní ovládání fungují dál.
+ */
+@Composable
+private fun TintLayer(tint: () -> Float, modifier: Modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier.drawBehind {
+            val p = tint()
+            if (p > 0f) {
+                drawRect(C.ok.copy(alpha = 0.10f + 0.45f * p))
+                val w = 14.dp.toPx()
+                drawRect(C.ok.copy(alpha = 0.4f + 0.6f * p), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w))
+            }
+        },
+    )
 }
 
 @Composable
@@ -215,7 +238,7 @@ private fun RailItem(
 
 /** Překryvy nad obsahem (lišta se STOP zůstává volná): výpadek spojení, převzetí, chyba, výzvy. */
 @Composable
-private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, onAttention: (Boolean) -> Unit) {
+private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, tint: () -> Float, onAttention: (Boolean) -> Unit) {
     val status by vm.status.collectAsState()
     val selftest by vm.selftest.collectAsState()
     val preheat by vm.manualPreheat.collectAsState()
@@ -246,6 +269,13 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, onAttention: (Boole
     }
     val linkLost = !connected && heatingKnown && link !is LinkState.Idle
     LaunchedEffect(linkLost) { if (linkLost && settings.soundLink) Beeper.beep(alarm = true) }
+
+    // Blikání trvá, dokud obsluha akci nepotvrdí – zavření okna ho nevypne.
+    val attn = selftest == null && link !is LinkState.Replaced && !linkLost && connected &&
+        (roast?.chargeReady == true || roast?.dropReady == true || manualDone)
+    SideEffect { onAttention(attn) }
+    // závoj pod okny výzev: okno výzvy nebliká, aby šlo číst
+    TintLayer(tint)
 
     when {
         link is LinkState.Replaced -> Modal(border = C.warn) {
@@ -306,24 +336,27 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, onAttention: (Boole
                 }
             }
         }
-        chargeReady && s != null -> Modal(border = C.ok) {
-            Text("Předehřev hotový – nasyp zrno do bubnu", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        chargeReady && s != null -> Modal(border = C.ok, scrim = Color.Transparent, borderWidth = 4.dp) {
+            Text("NASYP ZRNO DO BUBNU", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.ok)
+            Text("Předehřev hotový", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Teplota zrna dosáhla cíle a výdrž předehřevu uplynula. Vsyp zrno a potvrď vsypání.", color = C.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Vsypáno", { vm.roastMark("charge") }, Modifier.weight(1f), container = C.bt, height = 60.dp)
                 SecondaryButton("Zavřít", { dismissedChargeRun = s.roast?.run ?: -1 }, height = 60.dp)
             }
         }
-        manualDone && !dismissedManualCharge && s != null -> Modal(border = C.ok) {
-            Text("Předehřev hotový – nasyp zrno do bubnu", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        manualDone && !dismissedManualCharge && s != null -> Modal(border = C.ok, scrim = Color.Transparent, borderWidth = 4.dp) {
+            Text("NASYP ZRNO DO BUBNU", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.ok)
+            Text("Předehřev hotový", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Buben je prohřátý na ${fmt0(preheat?.target)} °C po dobu ${(preheat?.holdS ?: 0) / 60} min. Vsyp zrno a potvrď vsypání – značka se zapíše do grafu.", color = C.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Vsypáno", { vm.roastMark("charge") }, Modifier.weight(1f), container = C.bt, height = 60.dp)
                 SecondaryButton("Zavřít", { dismissedManualCharge = true }, height = 60.dp)
             }
         }
-        dropReady && s != null -> Modal(border = C.ok) {
-            Text("Připraveno k vysypání", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        dropReady && s != null -> Modal(border = C.ok, scrim = Color.Transparent, borderWidth = 4.dp) {
+            Text("VYSYP ZRNO", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.ok)
+            Text("Připraveno k vysypání", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Text("Splněna podmínka receptury (teplota nebo čas ${mmss(s.roast?.t)}). Vysyp zrno a potvrď – hořák se vypne a začne chlazení.", color = C.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 PrimaryButton("Vysypáno", { vm.roastMark("drop") }, Modifier.weight(1f), container = C.bt, height = 60.dp)
@@ -331,9 +364,6 @@ private fun Overlays(vm: AppViewModel, go: (Screen) -> Unit, onAttention: (Boole
             }
         }
     }
-    val attn = selftest == null && link !is LinkState.Replaced && !linkLost &&
-        (chargeReady || dropReady || (manualDone && !dismissedManualCharge))
-    SideEffect { onAttention(attn) }
 }
 
 @Composable
@@ -341,10 +371,12 @@ fun Modal(
     border: Color,
     bg: Color = C.surface,
     width: androidx.compose.ui.unit.Dp = 560.dp,
+    scrim: Color = C.scrim,
+    borderWidth: androidx.compose.ui.unit.Dp = 2.dp,
     content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Box(
-        Modifier.fillMaxSize().background(C.scrim).clickable(enabled = true, onClick = {}),
+        Modifier.fillMaxSize().background(scrim).clickable(enabled = true, onClick = {}),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -354,7 +386,7 @@ fun Modal(
                 .verticalScroll(rememberScrollState())
                 .clip(RoundedCornerShape(16.dp))
                 .background(bg)
-                .border(2.dp, border, RoundedCornerShape(16.dp))
+                .border(borderWidth, border, RoundedCornerShape(16.dp))
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
             content = content,

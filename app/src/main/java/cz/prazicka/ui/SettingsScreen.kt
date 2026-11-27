@@ -193,6 +193,11 @@ fun SettingsScreen(vm: AppViewModel, go: (Screen) -> Unit) {
                     CheckRow("Zvuk výzvy ke vsypání a vysypání", settings.soundPrompts) { v -> vm.updateSettings { it.copy(soundPrompts = v) } }
                     CheckRow("Zvuk při ztrátě spojení", settings.soundLink) { v -> vm.updateSettings { it.copy(soundLink = v) } }
                     CheckRow("Zaznamenávat ruční pražení (výchozí odpověď v dialogu)", settings.recordManual) { v -> vm.updateSettings { it.copy(recordManual = v) } }
+                    Label("Chlazení po vysypání při ručním pražení", size = 13.sp)
+                    Label("Míchač")
+                    Segmented(listOf(30, 60, 80, 100).map { it.toString() to "$it %" }, settings.manualCooler.toString(), { v -> vm.updateSettings { it.copy(manualCooler = v.toInt()) } }, Modifier.fillMaxWidth())
+                    Label("Chladicí ventilátor")
+                    Segmented(listOf(50, 80, 100).map { it.toString() to "$it %" }, settings.manualCoolfan.toString(), { v -> vm.updateSettings { it.copy(manualCoolfan = v.toInt()) } }, Modifier.fillMaxWidth())
                     Label("Obrazovka během ohřevu nezhasíná.")
                 }
                 Panel(Modifier.fillMaxWidth()) {

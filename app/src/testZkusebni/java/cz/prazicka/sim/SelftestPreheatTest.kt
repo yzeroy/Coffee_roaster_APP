@@ -98,4 +98,19 @@ class SelftestPreheatTest {
         second { p.onStatus(it) }
         assertNull(p.ui.value)
     }
+
+    @Test
+    fun selftestMeniceIPriRidkemStatusu() {
+        // aplikace dostává status jen 2× za sekundu
+        val st = Selftest()
+        st.onConnected(hello())
+        var t = 0
+        while (t < 60 && status().state != RoasterState.READY) {
+            for (k in 1..2) { repeat(5) { sim.step(100, 100) }; st.onStatus(status()) }
+            send("ping"); t++
+        }
+        val u = st.ui.value!!
+        assertFalse(u.toString(), u.failed)
+        assertEquals(Selftest.Check.OK, u.vfd.check)
+    }
 }

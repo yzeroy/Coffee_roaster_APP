@@ -288,4 +288,35 @@ class PortentaSimulatorTest {
         assertEquals(RoasterState.RUNNING, h.status().state)
         assertEquals("manual", h.status().ctrl.mode)
     }
+
+    @Test
+    fun opakovaneZapaleniDrziPlamen() {
+        val h = booted()
+        assertTrue(h.send("heat_start") { put("sp", 180.0) }.bool("ok") == true)
+        assertTrue(h.runUntil(60.0) { it.state == RoasterState.RUNNING && it.burner.flame == 1 })
+        h.run(120.0)
+        assertTrue(h.send("reignite").bool("ok") == true)
+        var sawPulse = false
+        for (i in 1..40) {
+            h.run(1.0)
+            val st = h.status()
+            assertEquals("plamen má zůstat 1", 1, st.burner.flame)
+            if (st.burner.ignition) sawPulse = true
+        }
+        assertTrue(sawPulse)
+        assertEquals(RoasterState.RUNNING, h.status().state)
+        assertFalse(h.status().burner.ignition)
+        assertTrue(h.events("ignition").any { it.str("msg")?.contains("uspesne") == true })
+    }
+
+    @Test
+    fun opakovaneZapaleniBezPlamene() {
+        val h = booted()
+        assertTrue(h.send("heat_start").bool("ok") == true)
+        assertTrue(h.runUntil(60.0) { it.state == RoasterState.RUNNING })
+        h.send("sim_flame") { put("fails", true) }
+        assertTrue(h.send("reignite").bool("ok") == true)
+        assertTrue(h.runUntil(120.0) { it.state == RoasterState.HALTED })
+        assertEquals(12, h.status().fault.code)
+    }
 }

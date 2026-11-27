@@ -47,7 +47,12 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         const val LINK_TIMEOUT_MS = 15_000L
         const val PENDING_TIMEOUT_MS = 5_000L
         const val COOL_HOLD_S = 600.0
-        const val IGNITION_GAS = 30.0
+        /** API 1.5: plyn během zapalovacího pulzu, délka pulzu, plyn po studeném zapálení. */
+        const val IGNITION_GAS = 100.0
+        const val IGNITION_PULSE_S = 5.0
+        const val IGNITION_AFTER_GAS = 70.0
+        /** Simulace detekce plamene: plamen „potvrzen“ po této době skutečného hoření. */
+        const val FLAME_DETECT_S = 3.0
         const val SP_DEFAULT = 200.0
         const val ROR_WINDOW_S = 30.0
         const val BAD_TOKEN = "spatny-token"
@@ -111,7 +116,9 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private var flame = 0
     private var interlock = 0
     private var flameFails = false
-    private val physicalFlame get() = power && ignition && !flameFails
+    /** Plamen skutečně hoří (model): zapálí ho pulz DO_05, drží se, dokud je modul zapnutý a teče plyn. */
+    private var burning = false
+    private val physicalFlame get() = burning
 
     // ---- teploty (model) a simulované podržení
     /** Horký vzduch v bubnu – jen vnitřní veličina modelu, Portenta ho neměří. */
@@ -178,6 +185,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private var ignStartBt = 0.0
     private var ignStartExh = 0.0
     private var reigniting = false
+    private var burnSince = -1L
     private var startSp: Double? = null
 
     // ---- události a odesílání
@@ -185,6 +193,8 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     private val events = ArrayDeque<JsonObject>()
     private var deferred: MutableList<JsonObject>? = null
     private var statusAccumMs = 0L
+    private var statusSimAccumMs = 0L
+    private var gasBeforeReignite = 0.0
     private var dirty = true
 
     init {
@@ -362,7 +372,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     }
 
     private fun burnerOff() {
-        power = false; ignition = false; gas = 0.0
+        power = false; ignition = false; gas = 0.0; burning = false
         if (flame == 1) flame = 0
         interlock = 0
         reigniting = false
@@ -421,6 +431,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         }
 
         updateVfds(dt)
+        updateFlameModel()
         updateThermal(dt)
         updateRor()
         checkInputs()
@@ -429,10 +440,13 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         updateControl(dt)
         updateRecipe(dt)
 
+        // jako firmware 2× za sekundu; při zrychlené simulaci častěji, aby mezi vzorky nebyly velké skoky
         statusAccumMs += realDtMs
-        if (dirty || statusAccumMs >= 500) {
+        statusSimAccumMs += simDtMs
+        if (dirty || statusAccumMs >= 500 || statusSimAccumMs >= 1000) {
             sendStatus()
             statusAccumMs = 0
+            statusSimAccumMs = 0
             dirty = false
         }
     }
@@ -450,6 +464,11 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             val step = RAMP_HZ_S * dt
             vfdHz[i] = if (vfdHz[i] < target) min(target, vfdHz[i] + step) else max(target, vfdHz[i] - step)
         }
+    }
+
+    private fun updateFlameModel() {
+        if (!power || gas <= 0.0 || flameFails) burning = false
+        else if (ignition) burning = true
     }
 
     private fun updateThermal(dt: Double) {
@@ -586,32 +605,45 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         val window = if (reigniting) 30.0 else 15.0
         when (ignStep) {
             "power" -> if (elapsed >= 1.0) {
+                // API 1.5: plyn ignition_gas_pct, DO_05 jen po dobu pulzu
+                gas = IGNITION_GAS
                 ignition = true
-                if (!reigniting) gas = IGNITION_GAS
-                ignStartBt = bt; ignStartExh = exh
-                ignStep = "ignite"; ignStepStart = simMs
+                ignStep = "pulse"; ignStepStart = simMs
+                burnSince = -1L
                 dirty = true
             }
-            "ignite" -> {
-                if (bt - ignStartBt >= 1.0 || exh - ignStartExh >= 1.0) {
+            "pulse", "window" -> {
+                if (burning && burnSince < 0) burnSince = simMs
+                if (ignStep == "pulse" && elapsed >= IGNITION_PULSE_S) {
+                    ignition = false
+                    // po pulzu: studené zapálení 70 %, opakované podle režimu (ruční = plyn před reignite)
+                    gas = if (reigniting) (if (mode == "manual") gasBeforeReignite else gasBeforeReignite.coerceIn(10.0, 100.0)) else IGNITION_AFTER_GAS
+                    ignStep = "window"; ignStepStart = simMs
+                    dirty = true
+                    return
+                }
+                val confirmed = burning && burnSince >= 0 && (simMs - burnSince) / 1000.0 >= FLAME_DETECT_S
+                if (confirmed) {
+                    if (ignStep == "pulse") { ignition = false; gas = if (reigniting) gasBeforeReignite else IGNITION_AFTER_GAS }
                     flame = 1
                     ignStep = ""
-                    event("info", "flame", "plamen potvrzen") { put("flame", 1) }
                     if (reigniting) {
                         reigniting = false
                         event("info", "ignition", "opakovane zapaleni uspesne") { put("ok", true) }
                     } else {
+                        event("info", "flame", "plamen potvrzen") { put("flame", 1) }
                         event("info", "ignition", "zapaleno") { put("ok", true) }
                         onLit()
                     }
                     dirty = true
-                } else if (elapsed >= window) {
+                } else if (ignStep == "window" && elapsed >= window) {
                     if (ignAttempt >= 2) {
                         halt(12, "plamen nenaskocil (pokus 2/2)") { vfdCmd[0] = 100.0; vfdCmd[1] = 100.0 }
                     } else {
                         ignition = false
-                        power = false
-                        if (!reigniting) gas = 0.0
+                        gas = 0.0
+                        burning = false
+                        if (!reigniting) power = false
                         ignStep = "purge"; ignStepStart = simMs
                         event("warn", "ignition", "plamen nenaskocil, proplach 5 s") { put("attempt", ignAttempt); put("of", 2); put("ok", false) }
                         dirty = true
@@ -620,7 +652,11 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             }
             "purge" -> if (elapsed >= 5.0) {
                 ignAttempt = 2
-                startIgnitionAttempt(true)
+                if (reigniting) {
+                    // DO_01 zůstává zapnutý – znovu od pulzu
+                    ignStep = "power"; ignStepStart = simMs - 1000L
+                    event("info", "ignition", "opakovane zapaleni pokus 2/2") { put("attempt", 2); put("of", 2) }
+                } else startIgnitionAttempt(true)
             }
         }
     }
@@ -632,7 +668,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         val tune = at
         if (tune != null && tune.phase == "ignite") {
             mode = "manual"
-            gas = IGNITION_GAS
+            gas = IGNITION_AFTER_GAS
             atNextAfterIgnite(tune)
             return
         }
@@ -641,7 +677,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             bumpless(recipeTarget() ?: sp)
         } else {
             mode = "manual"
-            gas = IGNITION_GAS
+            gas = IGNITION_AFTER_GAS
             val target = startSp
             startSp = null
             if (target != null) {
@@ -711,7 +747,7 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
     }
 
     private fun updateControl(dt: Double) {
-        if (state != "RUNNING" || flame != 1 || dt <= 0) return
+        if (state != "RUNNING" || flame != 1 || dt <= 0 || ignStep.isNotEmpty()) return
         val b = reading(0)
         val tune = at
         if (tune != null) { if (tune.phase != "ignite") updateAutotune(tune, b, dt); return }
@@ -1098,8 +1134,11 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
         requireState(ignStep.isEmpty(), "zapalovani uz probiha")
         reigniting = true
         ignAttempt = 1
-        flame = 0
-        startIgnitionAttempt(true)
+        gasBeforeReignite = gas
+        // API 8.2: burner.flame zůstává během opakovaného zapálení 1, DO_01 zůstává zapnutý
+        event("info", "ignition", "opakovane zapaleni pokus 1/2") { put("attempt", 1); put("of", 2) }
+        ignStep = "power"; ignStepStart = simMs - 1000L
+        dirty = true
     }
 
     private fun cmdRestart() {
@@ -1310,7 +1349,10 @@ class PortentaSimulator(seed: Long = System.nanoTime()) {
             putJsonArray("vfd_preflight_pct") { VFD_PREFLIGHT.forEach { add(it.toInt()) } }
             putJsonArray("vfd_rpm_10") { add(35); add(JsonNull); add(JsonNull); add(JsonNull) }
             putJsonArray("vfd_rpm_100") { add(70); add(JsonNull); add(JsonNull); add(JsonNull) }
-            put("ignition_gas_pct", IGNITION_GAS); put("sp_default", SP_DEFAULT)
+            put("ignition_gas_pct", IGNITION_GAS); put("ignition_after_gas_pct", IGNITION_AFTER_GAS); put("ignition_pulse_s", IGNITION_PULSE_S.toInt())
+            put("ignition_window_s", 15); put("reignite_window_s", 30)
+            putJsonArray("temp_period_ms") { add(250); add(15000); add(2000) }
+            put("sp_default", SP_DEFAULT)
             put("link_timeout_s", 15); put("cool_hold_s", COOL_HOLD_S.toInt()); put("ror_window_s", ROR_WINDOW_S.toInt()); put("status_period_ms", 500)
         }
     }
